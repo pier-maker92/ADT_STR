@@ -4,11 +4,11 @@ Automatic Drum Transcription model.
 
 ## CLAP-based Sample Curation
 
-Our primary contribution is an unsupervised method to automatically curate a large and diverse corpus of one-shot drum samples from unlabeled audio sources.
+This repository implements an unsupervised method to automatically curate a large and diverse corpus of one-shot drum samples from unlabeled audio sources.
 
-We leverage CLAP audio features to create a structured one-shot library for synthetic data generation, starting from a small curated set of reference samples. Given a handcrafted set of labeled one-shots **G** and a large unstructured library **U**, we encode both through CLAP's audio encoder. For each reference sample in **G**, we compute similarity scores against all samples in **U** and select the most similar ones. This produces a structured library **C** that inherits the categorical organization of **G** while scaling to the size of **U**.
+The approach leverages CLAP audio features to create a structured one-shot library for synthetic data generation, starting from a small curated set of reference samples. Given a handcrafted set of labeled one-shots **G** and a large unstructured library **U**, both are encoded through CLAP's audio encoder. For each reference sample in **G**, similarity scores are computed against all samples in **U** and the most similar ones are selected. This produces a structured library **C** that inherits the categorical organization of **G** while scaling to the size of **U**.
 
-This method is scalable and works with any unstructured library of one-shot samples.
+The method is scalable and works with any unstructured library of one-shot samples.
 
 ![CLAP-based sample curation pipeline](assets/ClapMatchingExtended.png)
 
