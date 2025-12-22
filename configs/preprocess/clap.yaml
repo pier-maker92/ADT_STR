@@ -1,0 +1,8 @@
+shared:
+  sample_rate: 48000
+
+clap_config:
+  model_name: "laion/clap-htsat-fused"
+  batch_size: 256
+  sample_pack_root: "path_to_sample_pack"
+  reference_root: "path_to_reference"

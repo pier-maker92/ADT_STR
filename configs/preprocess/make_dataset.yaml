@@ -1,0 +1,7 @@
+preprocess:
+  dataset_name: "lakh_matched"
+  # Output location (prefix for shard filenames)
+  dump_path: "path_to_dump"
+  only_drum: true
+
+  partitions: null

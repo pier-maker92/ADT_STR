@@ -1,0 +1,9 @@
+# model default settings
+enc_layers: 2
+dec_layers: 3
+nhead: 6
+d_query: 64
+dropout: 0.1
+tgt_vocab_size: 1400
+plain: true
+n_mels: 128

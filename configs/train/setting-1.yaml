@@ -1,0 +1,60 @@
+experiment:
+  project_name: "adt-training"
+  run_name: "setting-4"
+  use_wandb: true
+
+training:
+  num_epochs: 1
+  learning_rate: 1e-4
+  batch_size: 64
+  mixed_precision: "bf16"
+  max_dataloader_num_workers: 16
+
+logging:
+  save_every_n_steps: 1000
+  save_every_n_epochs: 1
+  logging_steps: 1
+  output_dir: "path_to_output"
+
+model:
+  enc_layers: 4
+  dec_layers: 4
+  d_query: 128
+  nhead: 6
+  dropout: 0.1
+
+checkpoint:
+  max_checkpoints: 3
+
+shared:
+  input_sec: 2.56
+  time_res: 0.01
+  win_length: 2048
+  sample_rate: 24000
+
+LakhDatasetConfig:
+  dataset_path: "path_to_dataset"
+  empty_tokens_percentage: 0.05
+  partitions: null
+  random_velocity_prob: .5
+
+tokenizer:
+  ADTOF_mapping: false
+  BOS_token: 2
+  EOS_token: 3
+  pad_token: 1
+  silence_token: 0
+  add_velocity: true
+
+synthetiser:
+  oneshot_path: "path_to_oneshot"
+  similarity_threshold: 0.8
+  max_hat_std_velocity: 0.15
+  max_hat_mean_velocity: 0.1
+  max_cymbals_std_velocity: 0.15
+  max_cymbals_mean_velocity: 0.65
+  mixup_range: 0.8
+  use_fx_prob: 0.3
+  use_reverb_prob: 0.5
+  use_compression_prob: 0.5
+  use_limiter_prob: 0.5

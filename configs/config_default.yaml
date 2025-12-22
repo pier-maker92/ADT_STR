@@ -1,0 +1,117 @@
+# Default configuration for ADT model training (nested)
+
+data:
+  train_dataset_path: null
+  val_dataset_path: null
+  variation: 1
+  train_partitions: null
+  instrument: null
+# FIXME: add instrument and partition
+
+shared:
+  input_sec: 2.56
+  time_res: 0.01
+  win_length: 2048
+  sample_rate: 16000
+
+synth:
+  segment_type: 5
+  dr_oneshot_path: "path_to_oneshot"
+  limit_thr: 1.0
+  dr_insttoken_offset: 0
+  limit_thrs: [0.5, 1.0]
+  limit_p: 0.8
+  mixup_range: 0
+  tolerance_thr: 0.25 # means use gold group
+
+model:
+  enc_layers: 2
+  dec_layers: 3
+  nhead: 6
+  d_query: 64
+  dropout: 0.1
+  tgt_vocab_size: 1400
+  plain: true
+  n_mels: 128
+
+# FIXME: some of the logging settings should be set in training section
+training:
+  batch_size: null
+  num_epochs: null
+  learning_rate: null
+  warmup_ratio: 0.1
+  gradient_accumulation_steps: 1
+  mixed_precision: "no"
+  max_dataloader_num_workers: 16
+  weight_decay: 1e-5
+  eval_strategy: "no"
+  max_grad_norm: 1.0
+  optim: "adamw_torch"
+  lr_scheduler_type: "cosine"
+
+
+logging:
+  output_dir: "./outputs"
+  logging_steps: 1
+  eval_every_n_epochs: null
+  save_every_n_epochs: null
+  save_every_n_steps: null
+  log_level: "INFO"
+
+experiment:
+  seed: 42
+  num_workers: 16
+  use_wandb: false
+  project_name: null
+  run_name: null
+
+checkpoint:
+  resume_from_checkpoint: null
+  auto_resume: false
+  max_checkpoints: null
+
+preprocess:
+  # Input dataset scanning
+  midi_root: "path_to_midi_root"
+  dataset_name: "lakh_matched"
+
+  # Output location (prefix for shard filenames)
+  dump_path: "path_to_dump"
+
+  # Sharding and splitting
+  separate: 1
+  sepa_tgt: null
+  manual_file_range: null
+  seed_fix: true
+
+  # Filtering and balancing
+  ignore_silent_p: 0.9
+  balance_thr: 10
+  balance_p: 0.0
+  only_drum: false
+
+  # Parallelism and chunking
+  n_jobs: -1
+  pre_dispatch: "2*n_jobs"
+  files_per_chunk: 512
+
+  limit_thr: 1.0
+
+  partitions: null
+
+inference:
+  checkpoint_path: null
+  batch_size: 8
+  max_length: 1000
+  beam_size: 5
+  use_beam_search: false
+  test_dataset_path: null
+  variation: 0
+  test_partitions: null
+  max_samples: null
+
+clap_config:
+  model_name: null
+  batch_size: null
+  sample_pack_root: null
+  reference_root: null

@@ -1,0 +1,23 @@
+shared:
+  input_sec: 2.56
+  time_res: 0.01
+  win_length: 2048
+  sample_rate: 44100
+
+EvalDataPreprocess:
+  dataset_path: "path_to_dataset"
+  output_path: "path_to_output"
+  dataset_name: "MDB"
+
+EvalDatasetConfig:
+  dataset_path: "path_to_dataset"
+  dataset_name: "MDB"
+  demucs_separated: true
+  splits: null
+
+tokenizer:
+  ADTOF_mapping: true
+  BOS_token: 2
+  EOS_token: 3
+  pad_token: 1
+  silence_token: 0
