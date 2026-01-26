@@ -26,6 +26,7 @@ class DrumTextParserConfig(SharedConfig):
     dataset_path: str
     output_path: str
     dataset_name: str
+    audio_extension: str
 
 
 class DrumTextParser:
@@ -35,7 +36,9 @@ class DrumTextParser:
     ):
         self.dataset_path = config.dataset_path
         self.dataset_name = config.dataset_name
-        self.audio_data_files = glob(os.path.join(config.dataset_path, "**/*.wav"), recursive=True)
+        self.audio_data_files = glob(
+            os.path.join(config.dataset_path, f"**/*.{config.audio_extension}"), recursive=True
+        )
         self.audio_data_files.sort()
 
         self.dump_path = config.output_path
@@ -43,8 +46,129 @@ class DrumTextParser:
         os.makedirs(os.path.dirname(self.parquet_path), exist_ok=True)
 
         self.midi_utils = MidiUtils()
-        self.segmenter = Segmenter(config=config)
+        self.segmenter = Segmenter(config)
         self.config = config
+        self.chunk_size_mb = 512  # 512MB chunk size
+        self.chunk_size_bytes = self.chunk_size_mb * 1024 * 1024
+
+    def _estimate_batch_size(self, batch_rows):
+        """Estimate the size of batch_rows in bytes."""
+        total_size = 0
+        for key, values in batch_rows.items():
+            if not values:
+                continue
+            if key == "audio":
+                # Sum of all audio binary data
+                total_size += sum(len(v) for v in values)
+            elif key == "notes":
+                # Sum of all notes binary data
+                total_size += sum(len(v) for v in values)
+            else:
+                # Estimate size for other fields (strings, ints, etc.)
+                # Rough estimate: 50 bytes per entry for metadata
+                total_size += len(values) * 50
+        return total_size
+
+    def _write_chunk(self, batch_rows, schema, chunk_index):
+        """Write a chunk of data to a parquet file."""
+        if not batch_rows or not any(batch_rows.values()):
+            return
+
+        # Generate chunk filename
+        base_path = self.parquet_path.replace(".parquet", "")
+        os.makedirs(base_path, exist_ok=True)
+        chunk_path = f"{base_path}/{chunk_index:04d}.parquet"
+
+        table = pa.table(batch_rows, schema=schema)
+        pq.write_table(table, chunk_path)
+
+        # Clear the batch_rows for next chunk
+        for key in batch_rows:
+            batch_rows[key] = []
+
+
+@dataclass
+class TMIDTTextParserConfig(DrumTextParserConfig):
+    dataset_size: str
+    drums_only: bool
+
+    def __post_init__(self):
+        if self.dataset_size not in ["m", "l"]:
+            raise ValueError("dataset_size must be either 'm' or 'l'")
+
+
+class TMIDTTextParser(DrumTextParser):
+    def __init__(self, config: TMIDTTextParserConfig):
+        super().__init__(config)
+        self.dataset_size = config.dataset_size
+
+        self.schema = pa.schema(
+            [
+                pa.field("audio_id", pa.string()),
+                pa.field("audio", pa.binary()),  # raw wav bytes
+                pa.field("sample_rate", pa.int32()),
+                pa.field("notes", pa.binary()),
+            ]
+        )
+        self.annotation_path = os.path.join(self.dataset_path, "annotations")
+        if config.drums_only:
+            self.audio_data_files = [f for f in self.audio_data_files if "_accomp" not in f]
+        filtered_audio_data_files = []
+        for f in self.audio_data_files:
+            if os.path.exists(
+                os.path.join(self.annotation_path, f"drums_{self.dataset_size}", Path(f).name.replace(".mp3", ".txt"))
+            ):
+                filtered_audio_data_files.append(f)
+        self.audio_data_files = filtered_audio_data_files
+        self.audio_data_files.sort()
+
+        self.mapping = MappingUtils().TMIDT_to_Standard_MIDI
+
+    def parse(self):
+        # parse audio segment and notes into parquet
+        batch_rows = {
+            "audio_id": [],
+            "sample_rate": [],
+            "audio": [],
+            "notes": [],
+        }
+        chunk_index = 0
+        for audio_file in tqdm(self.audio_data_files, desc="Parsing audio files"):
+            notes = []
+            audio_id = Path(audio_file).name
+            with open(
+                os.path.join(self.annotation_path, f"drums_{self.dataset_size}", audio_id.replace(".mp3", ".txt")), "r"
+            ) as f:
+                for line in f.readlines():
+                    content = line.split()
+                    if len(content):
+                        start, label = content
+                        label = int(label)
+                        start = float(start)
+                        notes.append([start, start + 0.1, self.mapping[label], 100])
+            notes = sorted(notes, key=lambda x: (x[0], x[1]))  # sort by onset and offset
+            try:
+                audio = load_and_resample(audio_file, self.config.sample_rate)
+                audio_chunks, notes_chunks = self.segmenter.chunk_audio_and_notes(audio, notes, audio_id)
+            except Exception as e:
+                print(e)
+                continue
+            for audio_chunk, notes_chunk in zip(audio_chunks, notes_chunks):
+                wav_bin = audio_chunk.numpy().astype(np.float32).tobytes()
+                notes_bin = np.array(notes_chunk, dtype=np.float32).tobytes()
+                batch_rows["audio_id"].append(audio_id)
+                batch_rows["audio"].append(wav_bin)
+                batch_rows["notes"].append(notes_bin)
+                batch_rows["sample_rate"].append(self.config.sample_rate)
+
+                # Check if we need to write a chunk
+                if self._estimate_batch_size(batch_rows) >= self.chunk_size_bytes:
+                    self._write_chunk(batch_rows, self.schema, chunk_index)
+                    chunk_index += 1
+
+        # Write the final chunk
+        if any(batch_rows.values()):
+            self._write_chunk(batch_rows, self.schema, chunk_index)
 
 
 @dataclass
@@ -122,6 +246,7 @@ class MDBDrumTextParser(DrumTextParser):
             "split": [],
             "is_demucs_separated": [],
         }
+        chunk_index = 0
         for audio_file in tqdm(self.audio_data_files, desc="Parsing audio files"):
             notes = []
             audio_id = Path(audio_file).name
@@ -147,8 +272,14 @@ class MDBDrumTextParser(DrumTextParser):
                 batch_rows["split"].append(self.get_split(audio_file))
                 batch_rows["is_demucs_separated"].append(is_demucs_separated)
 
-        table = pa.table(batch_rows, schema=self.schema)
-        pq.write_table(table, self.parquet_path)
+                # Check if we need to write a chunk
+                if self._estimate_batch_size(batch_rows) >= self.chunk_size_bytes:
+                    self._write_chunk(batch_rows, self.schema, chunk_index)
+                    chunk_index += 1
+
+        # Write the final chunk
+        if any(batch_rows.values()):
+            self._write_chunk(batch_rows, self.schema, chunk_index)
 
 
 @dataclass
@@ -228,6 +359,7 @@ class ENSTDrumTextParser(DrumTextParser):
             "notes": [],
             "drummer": [],
         }
+        chunk_index = 0
         for audio_file in tqdm(self.audio_data_files, desc="Parsing audio files"):
             notes = []
             drummer = self.search_for_string_in_path(audio_file, "drummer")
@@ -242,8 +374,12 @@ class ENSTDrumTextParser(DrumTextParser):
                     if self.midi_utils.valid_note_per_instrument("drums", self.mapping[label]):
                         notes.append([float(start), float(start) + 0.1, self.mapping[label], 100])
             notes = sorted(notes, key=lambda x: (x[0], x[1]))  # sort by onset and offset
-            audio = load_and_resample(audio_file, self.config.sample_rate)
-            audio_chunks, notes_chunks = self.segmenter.chunk_audio_and_notes(audio, notes)
+            audio = load_and_resample(audio_file)
+            try:
+                audio_chunks, notes_chunks = self.segmenter.chunk_audio_and_notes(audio, notes)
+            except ValueError as e:
+                print(e)
+                continue
             for audio_chunk, notes_chunk in zip(audio_chunks, notes_chunks):
                 wav_bin = audio_chunk.numpy().astype(np.float32).tobytes()
                 notes_bin = np.array(notes_chunk, dtype=np.float32).tobytes()
@@ -253,8 +389,14 @@ class ENSTDrumTextParser(DrumTextParser):
                 batch_rows["notes"].append(notes_bin)
                 batch_rows["sample_rate"].append(self.config.sample_rate)
 
-        table = pa.table(batch_rows, schema=self.schema)
-        pq.write_table(table, self.parquet_path)
+                # Check if we need to write a chunk
+                if self._estimate_batch_size(batch_rows) >= self.chunk_size_bytes:
+                    self._write_chunk(batch_rows, self.schema, chunk_index)
+                    chunk_index += 1
+
+        # Write the final chunk
+        if any(batch_rows.values()):
+            self._write_chunk(batch_rows, self.schema, chunk_index)
 
 
 # parse the arguments
@@ -270,6 +412,8 @@ if __name__ == "__main__":
         text_parser = ENSTDrumTextParser(config=ENSTDrumTextParserConfig(**plain_config))
     elif plain_config.get("dataset_name") == "MDB":
         text_parser = MDBDrumTextParser(config=MDBDrumTextParserConfig(**plain_config))
+    elif plain_config.get("dataset_name") == "TMIDT":
+        text_parser = TMIDTTextParser(config=TMIDTTextParserConfig(**plain_config))
     else:
         raise ValueError(f"Dataset name {config.dataset_name} not supported")
     text_parser.parse()

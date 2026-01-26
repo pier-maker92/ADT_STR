@@ -200,3 +200,14 @@ class MappingUtils:
             "rc4": 59,  # Ride Cymbal 2
             "sticks": 75,  # Claves
         }
+
+        self.TMIDT_to_Standard_MIDI = {
+            0: 35,  # Acoustic Bass Drum
+            1: 38,  # Acoustic Snare
+            2: 41,  # Floor Tom
+            3: 42,  # Closed Hi Hat
+            4: 49,  # Crash Cymbal
+            5: 51,  # Ride Cymbal
+            6: 53,  # Ride Bell
+            7: 75,  # Claves
+        }

@@ -9,6 +9,7 @@ EvalDataPreprocess:
   drummers: null
   output_path: "path_to_output"
   dataset_name: "ENST"
+  audio_extension: "wav"
 
 EvalDatasetConfig:
   dataset_path: "path_to_dataset"

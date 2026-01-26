@@ -30,10 +30,15 @@ class Segmenter:
         notes_chunks = [[] for _ in range(len(audio_chunks))]
         for note in notes:
             onset, offset, pitch, velocity = note
+            original_onset, original_offset = onset, offset
             on_idx = int(onset // self.config.input_sec)
             off_idx = int(offset // self.config.input_sec)
             onset = onset % self.config.input_sec
             offset = offset % self.config.input_sec
+            if on_idx > len(notes_chunks) - 1:
+                raise ValueError(
+                    f"onset index {on_idx} is greater than the number of notes chunks {len(notes_chunks)}. This means that annotations are not consistent with the audio length."
+                )
             if on_idx == off_idx:
                 notes_chunks[on_idx].append(np.array([onset, offset, pitch, velocity]))
 

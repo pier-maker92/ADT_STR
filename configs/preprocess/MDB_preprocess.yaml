@@ -8,6 +8,7 @@ EvalDataPreprocess:
   dataset_path: "path_to_dataset"
   output_path: "path_to_output"
   dataset_name: "MDB"
+  audio_extension: "wav"
 
 EvalDatasetConfig:
   dataset_path: "path_to_dataset"

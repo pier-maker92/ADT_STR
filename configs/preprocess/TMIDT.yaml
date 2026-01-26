@@ -1,0 +1,13 @@
+shared:
+  input_sec: 2.56
+  time_res: 0.01
+  win_length: 2048
+  sample_rate: 44100
+
+EvalDataPreprocess:
+  dataset_path: "path_to_dataset"
+  output_path: "path_to_output"
+  dataset_name: "TMIDT"
+  audio_extension: "mp3"
+  dataset_size: "m"
+  drums_only: true

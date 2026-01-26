@@ -8,8 +8,8 @@ import torchaudio.transforms as T
 
 
 def load_and_resample(wav_file: str, target_sr: Union[int, None]):
-    orig_sr = torchaudio.info(wav_file).sample_rate
-    wav_seg = torchaudio.load(wav_file)[0].mean(0)
+    wav_seg, orig_sr = torchaudio.load(wav_file)
+    wav_seg = wav_seg.mean(0)
     if target_sr is None:
         return wav_seg
     return resample(wav_seg, orig_sr, target_sr)
