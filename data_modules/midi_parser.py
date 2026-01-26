@@ -138,7 +138,7 @@ parser.add_argument(
 )
 if __name__ == "__main__":
     args = parser.parse_args()
-    default_path = "/home/ach18017ws/AFAMT_share_250331/codes/ADT/config_default.yaml"
+    default_path = "path/to/your/config/file/config_default.yaml"
 
     cfg = load_config_from_yaml(default_path)
     if args.config_path:
