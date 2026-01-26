@@ -50,32 +50,7 @@ def separate_drums(files, output_dir="demucs_output", model="htdemucs"):
         else:
             print(f"Warning: Drums not found for {file_path}")
 
-
-ENST_SPLITS = [
-    "162_MIDI-minus-one_fusion-125_sticks",
-    "126_minus-one_salsa_sticks",
-    "127_minus-one_rock-60s_sticks",
-    "128_minus-one_metal_sticks",
-    "129_minus-one_musette_sticks",
-    "130_minus-one_funky_sticks",
-    "131_minus-one_funk_sticks",
-    "132_minus-one_charleston_sticks",
-    "133_minus-one_celtic-rock_sticks",
-    "134_minus-one_bossa_sticks",
-    "140_MIDI-minus-one_bigband_sticks",
-    "142_MIDI-minus-one_blues-102_sticks",
-    "144_MIDI-minus-one_country-120_sticks",
-    "146_MIDI-minus-one_disco-108_sticks",
-    "148_MIDI-minus-one_funk-101_sticks",
-    "150_MIDI-minus-one_grunge_sticks",
-    "152_MIDI-minus-one_nu-soul_sticks",
-    "154_MIDI-minus-one_rock-113_sticks",
-    "156_MIDI-minus-one_rock'n'roll-188_sticks",
-    "158_MIDI-minus-one_soul-120-marvin-gaye_sticks",
-    "160_MIDI-minus-one_soul-98_sticks",
-]
 # Example usage
 if __name__ == "__main__":
-    all_files = glob("/home/ach18017ws/MDBDrums/MDB Drums/audio/full_mix/*.wav", recursive=True)
-    # files = [f for f in all_files if any(split == f.split("/")[-1].split(".")[0] for split in ENST_SPLITS)]
-    separate_drums(all_files, output_dir="/home/ach18017ws/MDBDrums/MDB Drums/audio/demucs_separated")
+    all_files = glob("path/to/your/audio/files/*.wav", recursive=True)
+    separate_drums(all_files, output_dir="path/to/your/output/directory")
