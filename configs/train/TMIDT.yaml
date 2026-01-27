@@ -35,8 +35,8 @@ shared:
 TrainDatasetConfig:
   dataset_path: "path_to_dataset"
   empty_tokens_percentage: 0.05
-  partitions: null
   random_velocity_prob: .5
+  dataset_name: "TMIDT"
 
 tokenizer:
   ADTOF_mapping: false

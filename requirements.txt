@@ -4,3 +4,5 @@ matplotlib
 tqdm
 torchaudio
 datasets
+h5py
+pedalboard
