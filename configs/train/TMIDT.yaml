@@ -35,7 +35,7 @@ shared:
 TrainDatasetConfig:
   dataset_path: "/Users/pierfrancescomelucci/Research/Playground/Sony/data/TMIDT/data@44100"
   empty_tokens_percentage: 0.05
-  random_velocity_prob: 0
+  random_velocity_prob: 0.5
   dataset_name: "TMIDT"
 
 tokenizer:

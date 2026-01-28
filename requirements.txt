@@ -6,3 +6,7 @@ torchaudio
 datasets
 h5py
 pedalboard
+wandb
+torch
+transformers[torch]
+pytorch-fast-transformers
