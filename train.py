@@ -16,11 +16,12 @@ from transformers import Trainer, TrainingArguments
 # Local imports
 from model import ADTModel
 from config import ADTModelConfig
+from model import ComputeMelSpectrogram
+from utils.utils import create_mask, create_mask_plain
 from modules.synthetiser import SynthDrum, SynthDrumConfig
-from utils.config_utils import load_config_from_yaml, deep_merge_dicts
 from modules.midi_tokenizer import MidiTokenizer, MidiTokenizerConfig
-from model import ComputeMelSpectrogram, create_mask, create_mask_plain
-from data_modules.train_dataset import LakhDataset, collate_fn, LakhDatasetConfig
+from utils.config_utils import load_config_from_yaml, deep_merge_dicts
+from data_modules.train_dataset import LakhDataset, collate_fn, LakhDatasetConfig, TMIDTDataset, TMIDTDatasetConfig
 
 
 class ADTTrainer(Trainer):
@@ -165,6 +166,7 @@ def create_training_arguments(config: Dict[str, Any]) -> TrainingArguments:
                 latest_checkpoint = max(checkpoints, key=lambda p: p.stat().st_mtime)
                 resume_from_checkpoint = str(latest_checkpoint)
 
+    # FIXME just pass **training_cfg to the TrainingArguments
     training_args = TrainingArguments(
         output_dir=str(output_path),
         num_train_epochs=training_cfg.get("num_epochs"),
@@ -213,17 +215,26 @@ def train(config: Dict[str, Any]):
         )
 
     # config
-    config_tokenizer = config.get("tokenizer")
-    config_synthetiser = config.get("synthetiser")
-    config_synthetiser["ADTOF_mapping"] = config_tokenizer["ADTOF_mapping"]
-    config_synthetiser.update(config.get("shared"))
-    config_dataset = config.get("LakhDatasetConfig")
-    config_dataset.update(config.get("shared"))
+    config_tokenizer = config["tokenizer"]
+    config_dataset = config["TrainDatasetConfig"]
+    config_dataset.update(config["shared"])
+
+    if config_dataset["dataset_name"] == "Lakh":
+        config_synthetiser = config.get("synthetiser", None)
+        assert config_synthetiser is not None, "Synthetiser is required for Lakh dataset"
+        config_synthetiser["ADTOF_mapping"] = config_tokenizer["ADTOF_mapping"]
+        config_synthetiser.update(config["shared"])
+        synthetiser = SynthDrum(SynthDrumConfig(**config_synthetiser))
+    else:
+        config_synthetiser = None
     # load modules
-    logger.info("Creating datasets...")
-    synthetiser = SynthDrum(SynthDrumConfig(**config_synthetiser))
     tokenizer = MidiTokenizer(MidiTokenizerConfig(**config_tokenizer))
-    dataset = LakhDataset(LakhDatasetConfig(**config_dataset), tokenizer, synthetiser)
+    if config_dataset["dataset_name"] == "Lakh":
+        dataset = LakhDataset(LakhDatasetConfig(**config_dataset), tokenizer, synthetiser)
+    elif config_dataset["dataset_name"] == "TMIDT":
+        dataset = TMIDTDataset(TMIDTDatasetConfig(**config_dataset), tokenizer)
+    else:
+        raise ValueError(f"Dataset name {config_dataset['dataset_name']} not supported")
 
     logger.info("Creating model...")
     model_section = config.get("model")

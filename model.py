@@ -1,19 +1,63 @@
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from config import ADTModelConfig
 import torchaudio.transforms as T
-from fast_transformers.masking import TriangularCausalMask, LengthMask
+from utils.utils import create_mask_plain
 from fast_transformers.builders import TransformerDecoderBuilder, TransformerEncoderBuilder
 
+class TokenEmbedding(nn.Module):
+    def __init__(self, vocab_size, emb_size):
+        """
+        Args:
+            vocab_size: Vocabulary size
+            emb_size: Dimension of embedding vectors
+        """
+        super(TokenEmbedding, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, emb_size)
+        self.emb_size = emb_size
 
-def create_mask_plain(tgt_seq_len, tgt_lengths=None, device=None):
-    tgt_mask = TriangularCausalMask(tgt_seq_len, device=device)
-    if tgt_lengths is None:
-        return tgt_mask
-    tgt_padding_mask = LengthMask(torch.tensor(tgt_lengths), device=device)
-    return tgt_mask, tgt_padding_mask
+    def forward(self, token_vector: torch.Tensor):
+        """
+        Args:
+            token_vector: One-hot or multi-hot tensor (batch, seq_len, vocab_size)
+        Returns:
+            Embedded vectors (batch, seq_len, emb_size)
+        """
+        # Get embedding weights (vocab_size, emb_size)
+        embedding_weights = self.embedding.weight  # Get weights
 
+        # Multiply one-hot or multi-hot vector with embedding weights
+        embeddings = torch.matmul(token_vector, embedding_weights) * math.sqrt(self.emb_size)
+        
+        return embeddings
+    
+class TokenEmbedding_plain(nn.Module):
+    def __init__(self, vocab_size, emb_size):
+        super(TokenEmbedding_plain, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, emb_size)
+        self.emb_size = emb_size
+
+    def forward(self, tokens: torch.Tensor):
+        return self.embedding(tokens.long()) * math.sqrt(self.emb_size)
+
+class PositionalEncoding(nn.Module):
+    def __init__(self,
+                 emb_size: int,
+                 maxlen: int = 2048):
+        super(PositionalEncoding, self).__init__()
+        den = torch.exp(- torch.arange(0, emb_size, 2)* math.log(10000) / emb_size)
+        pos = torch.arange(0, maxlen).reshape(maxlen, 1)
+        pos_embedding = torch.zeros((maxlen, emb_size))
+        pos_embedding[:, 0::2] = torch.sin(pos * den)
+        pos_embedding[:, 1::2] = torch.cos(pos * den)
+        pos_embedding = pos_embedding.unsqueeze(0)
+
+        self.register_buffer('pos_embedding', pos_embedding)
+
+    def forward(self, token_embedding: torch.Tensor):
+        return token_embedding + self.pos_embedding[:, :token_embedding.size(1), :]
 
 class ComputeMelSpectrogram(torch.nn.Module):
     def __init__(self, sample_rate, win_length, time_res, n_mels, device):

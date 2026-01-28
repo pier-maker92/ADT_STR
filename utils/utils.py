@@ -5,6 +5,91 @@ import torchaudio
 import numpy as np
 from pathlib import Path
 from collections import Counter
+from fast_transformers.masking import TriangularCausalMask, BaseMask, LengthMask
+
+
+class myLengthMask(BaseMask):
+    """Provide a BaseMask interface for lengths. Mostly to be used with
+    sequences of different lengths.
+    """
+    def __init__(self, lengths=None, max_len=None, device=None, manual_bool_matrix=None):
+        self._device = device or (lengths.device if lengths is not None else None)
+
+        # 初期化時に `bool_matrix` が渡されていれば、それを使用
+        if manual_bool_matrix is not None:
+            self._bool_matrix = manual_bool_matrix.to(self._device)
+        elif lengths is not None:
+            self._lengths = lengths.clone().to(self._device)
+            self._max_len = max_len or self._lengths.max()
+            self._bool_matrix = None  # `lengths` から `bool_matrix` を計算
+        else:
+            raise ValueError("Either `lengths` or `bool_matrix` must be specified")
+
+    @property
+    def bool_matrix(self):
+        """
+        If `bool_matrix` is already set, use it.
+        Otherwise, compute it based on the `lengths`.
+        """
+        if self._bool_matrix is None:
+            self._bool_matrix = create_bool_matrix(self._lengths, self._max_len, mask_prob=0.0)
+        return self._bool_matrix
+
+def create_mask_plain(tgt_seq_len, tgt_lengths = None, device = None):
+    tgt_mask = TriangularCausalMask(tgt_seq_len, device = device)
+    if tgt_lengths is None:
+        return tgt_mask 
+    tgt_padding_mask = LengthMask(torch.tensor(tgt_lengths), device = device)
+    return tgt_mask, tgt_padding_mask
+
+
+
+def create_bool_matrix(lengths, max_len=None, mask_prob=0.0):
+    """
+    Create a `bool_matrix` based on `lengths`, 
+    and add functionality to optionally mask tokens at positions 5k+3 with probability `mask_prob`.
+
+    Arguments:
+        lengths: List or PyTorch Tensor (N,) indicating the valid length for each sequence.
+        max_len: Maximum sequence length (default is lengths.max()).
+        mask_prob: Probability to mask tokens at positions 5k+3 (default: 95%).
+
+    Returns:
+        bool_matrix: PyTorch boolean mask of shape (N, max_len)
+    """
+    # list を Tensor に変換
+    if isinstance(lengths, list):
+        lengths = torch.tensor(lengths, dtype=torch.int64)
+
+    max_len = max_len or lengths.max()
+    batch_size = lengths.size(0)
+
+    with torch.no_grad():  # 勾配を記録せずにメモリ効率よく計算
+        indices = torch.arange(max_len, device=lengths.device)
+        bool_matrix = (indices.view(1, -1) < lengths.view(-1, 1))  # 通常のマスク
+
+        # 5k+3 の位置のトークン(inst_token)を特定
+        mask_positions = (indices % 5 == 3).view(1, -1)
+
+        # 5k+3 の位置を mask_prob の確率でマスク
+        random_mask = torch.bernoulli(torch.full(
+            (batch_size, max_len), mask_prob, dtype=torch.float32, device=lengths.device
+        )).bool()
+
+        bool_matrix = bool_matrix & ~(mask_positions & random_mask)
+
+    return bool_matrix
+
+def create_mask(tgt_seq_len, tgt_lengths = None, device = None, inst_mask_proba=0.0):
+    tgt_mask = TriangularCausalMask(tgt_seq_len-1, device = device)
+    if tgt_lengths is None:
+        return tgt_mask 
+    tgt_bool_matrix = create_bool_matrix(tgt_lengths, mask_prob=inst_mask_proba)
+    tgt_input_bool_matrix = tgt_bool_matrix[:, :-1]
+    tgt_out_padding_mask = tgt_bool_matrix[:, 1:]
+    tgt_input_padding_mask = myLengthMask(device=device, manual_bool_matrix=tgt_input_bool_matrix)
+    
+    return tgt_mask, tgt_input_padding_mask, tgt_out_padding_mask
 
 
 def calc_separate_idx(total_files, separate, sepa_tgt, manual_file_range):

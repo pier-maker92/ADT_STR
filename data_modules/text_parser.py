@@ -9,6 +9,7 @@ import pandas as pd
 from tqdm import tqdm
 from glob import glob
 from pathlib import Path
+from typing import Optional
 from config import SharedConfig
 from dataclasses import dataclass
 from utils.midi_utils import MidiUtils
@@ -48,8 +49,6 @@ class DrumTextParser:
         self.midi_utils = MidiUtils()
         self.segmenter = Segmenter(config)
         self.config = config
-        self.chunk_size_mb = 512  # 512MB chunk size
-        self.chunk_size_bytes = self.chunk_size_mb * 1024 * 1024
 
     def _estimate_batch_size(self, batch_rows):
         """Estimate the size of batch_rows in bytes."""
@@ -91,6 +90,8 @@ class DrumTextParser:
 class TMIDTTextParserConfig(DrumTextParserConfig):
     dataset_size: str
     drums_only: bool
+    chunk_size_mb: int = 512
+    num_audio_files: Optional[int] = None
 
     def __post_init__(self):
         if self.dataset_size not in ["m", "l"]:
@@ -100,7 +101,16 @@ class TMIDTTextParserConfig(DrumTextParserConfig):
 class TMIDTTextParser(DrumTextParser):
     def __init__(self, config: TMIDTTextParserConfig):
         super().__init__(config)
+
         self.dataset_size = config.dataset_size
+        self.chunk_size_mb = config.chunk_size_mb
+        self.chunk_size_bytes = self.chunk_size_mb * 1024 * 1024
+
+        if config.num_audio_files:
+            print(
+                f"WARNING: num_audio_files is set to {config.num_audio_files}, this should be used for debugging only"
+            )
+            self.audio_data_files = self.audio_data_files[: config.num_audio_files]
 
         self.schema = pa.schema(
             [
@@ -154,6 +164,8 @@ class TMIDTTextParser(DrumTextParser):
                 print(e)
                 continue
             for audio_chunk, notes_chunk in zip(audio_chunks, notes_chunks):
+                if not len(notes_chunk):
+                    continue
                 wav_bin = audio_chunk.numpy().astype(np.float32).tobytes()
                 notes_bin = np.array(notes_chunk, dtype=np.float32).tobytes()
                 batch_rows["audio_id"].append(audio_id)
