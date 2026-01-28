@@ -33,9 +33,9 @@ shared:
   sample_rate: 24000
 
 TrainDatasetConfig:
-  dataset_path: "path_to_dataset"
+  dataset_path: "/Users/pierfrancescomelucci/Research/Playground/Sony/data/TMIDT/data@44100"
   empty_tokens_percentage: 0.05
-  random_velocity_prob: .5
+  random_velocity_prob: 0
   dataset_name: "TMIDT"
 
 tokenizer:
@@ -44,7 +44,7 @@ tokenizer:
   EOS_token: 3
   pad_token: 1
   silence_token: 0
-  add_velocity: true
+  add_velocity: false
 
 synthetiser:
   oneshot_path: "path_to_oneshot"
