@@ -16,11 +16,12 @@ from transformers import Trainer, TrainingArguments
 # Local imports
 from model import ADTModel
 from config import ADTModelConfig
+from model import ComputeMelSpectrogram
+from utils.utils import create_mask, create_mask_plain
 from modules.synthetiser import SynthDrum, SynthDrumConfig
-from utils.config_utils import load_config_from_yaml, deep_merge_dicts
 from modules.midi_tokenizer import MidiTokenizer, MidiTokenizerConfig
-from model import ComputeMelSpectrogram, create_mask, create_mask_plain
-from data_modules.train_dataset import LakhDataset, collate_fn, LakhDatasetConfig
+from utils.config_utils import load_config_from_yaml, deep_merge_dicts
+from data_modules.train_dataset import LakhDataset, collate_fn, LakhDatasetConfig, TMIDTDataset, TMIDTDatasetConfig
 
 
 class ADTTrainer(Trainer):
