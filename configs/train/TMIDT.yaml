@@ -4,7 +4,7 @@ experiment:
   use_wandb: false
 
 training:
-  num_epochs: 1
+  num_epochs: 2
   learning_rate: 1e-4
   batch_size: 64
   mixed_precision: "bf16"
@@ -33,7 +33,7 @@ shared:
   sample_rate: 24000
 
 TrainDatasetConfig:
-  dataset_path: "/workspace/data/TMIDT/data@44100"
+  dataset_path: "/workspace/data/TMIDT/data@24000"
   empty_tokens_percentage: 0.05
   random_velocity_prob: 0.5
   dataset_name: "TMIDT"

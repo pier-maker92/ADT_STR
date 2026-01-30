@@ -130,9 +130,11 @@ class TMIDTDataset(TrainDataset):
         return example
 
     def _get_audio(self, example):
-        data = torch.from_numpy(np.frombuffer(example["audio"], dtype=np.float32))
-        resampler = torchaudio.transforms.Resample(44100, self.sample_rate)
-        audio = resampler(data)
+        audio = torch.from_numpy(np.frombuffer(example["audio"], dtype=np.float16))
+        sample_rate = example["sample_rate"]
+        if sample_rate != self.sample_rate:
+            resampler = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
+            audio = resampler(audio)
         # normalize audio
         example["audio"] = audio / (audio.abs().max() + 1e-8)
         return example

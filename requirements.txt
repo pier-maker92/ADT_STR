@@ -1,12 +1,12 @@
+torch
+torchaudio
 numpy
 pandas
 matplotlib
 tqdm
-torchaudio
 datasets
 h5py
 pedalboard
 wandb
-torch
 transformers[torch]
-pytorch-fast-transformers
+# pytorch-fast-transformers: install after with --no-build-isolation (see install.sh)

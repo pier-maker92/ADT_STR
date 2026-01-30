@@ -166,7 +166,7 @@ class TMIDTTextParser(DrumTextParser):
             for audio_chunk, notes_chunk in zip(audio_chunks, notes_chunks):
                 if not len(notes_chunk):
                     continue
-                wav_bin = audio_chunk.numpy().astype(np.float32).tobytes()
+                wav_bin = audio_chunk.numpy().astype(np.float16).tobytes()
                 notes_bin = np.array(notes_chunk, dtype=np.float32).tobytes()
                 batch_rows["audio_id"].append(audio_id)
                 batch_rows["audio"].append(wav_bin)
