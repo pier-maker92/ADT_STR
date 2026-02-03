@@ -166,7 +166,7 @@ class TMIDTTextParser(DrumTextParser):
             for audio_chunk, notes_chunk in zip(audio_chunks, notes_chunks):
                 if not len(notes_chunk):
                     continue
-                wav_bin = audio_chunk.numpy().astype(np.float16).tobytes()
+                wav_bin = audio_chunk.numpy().astype(np.float32).tobytes()
                 notes_bin = np.array(notes_chunk, dtype=np.float32).tobytes()
                 batch_rows["audio_id"].append(audio_id)
                 batch_rows["audio"].append(wav_bin)
@@ -191,6 +191,8 @@ class MDBDrumTextParserConfig(DrumTextParserConfig):
 class MDBDrumTextParser(DrumTextParser):
     def __init__(self, config: MDBDrumTextParserConfig):
         super().__init__(config)
+
+        self.chunk_size_bytes = 512 * 1024 * 1024
 
         self.audio_data_files = [
             f
@@ -317,6 +319,7 @@ class ENSTDrumTextParser(DrumTextParser):
             ]
         )
         self.mapping = MappingUtils().ENST_to_Standard_MIDI
+        self.chunk_size_bytes = 8196 * 1024 * 1024
 
     def search_for_string_in_path(self, path, string):
         for part in path.split("/"):
@@ -386,7 +389,7 @@ class ENSTDrumTextParser(DrumTextParser):
                     if self.midi_utils.valid_note_per_instrument("drums", self.mapping[label]):
                         notes.append([float(start), float(start) + 0.1, self.mapping[label], 100])
             notes = sorted(notes, key=lambda x: (x[0], x[1]))  # sort by onset and offset
-            audio = load_and_resample(audio_file)
+            audio = load_and_resample(audio_file, self.config.sample_rate)
             try:
                 audio_chunks, notes_chunks = self.segmenter.chunk_audio_and_notes(audio, notes)
             except ValueError as e:

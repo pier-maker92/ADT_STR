@@ -2,17 +2,17 @@ shared:
   input_sec: 2.56
   time_res: 0.01
   win_length: 2048
-  sample_rate: 44100
+  sample_rate: 24000
 
 EvalDataPreprocess:
-  dataset_path: "path_to_dataset"
+  dataset_path: "/home/ec2-user/data/ENST"
   drummers: null
-  output_path: "path_to_output"
+  output_path: "/home/ec2-user/data/parquet/"
   dataset_name: "ENST"
   audio_extension: "wav"
 
 EvalDatasetConfig:
-  dataset_path: "path_to_dataset"
+  dataset_path: "/home/ec2-user/data/parquet/"
   drummers: null
   dataset_name: "ENST"
   minus_one: true

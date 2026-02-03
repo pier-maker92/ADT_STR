@@ -1,5 +1,5 @@
 experiment:
-  run_name: "inference-setting-1"
+  run_name: "inference-MDB-TMIDT"
 
 shared:
   sample_rate: 24000
@@ -16,24 +16,24 @@ tokenizer:
   EOS_token: 3
   pad_token: 1
   silence_token: 0
-  add_velocity: true
+  add_velocity: false
 
 EvalDatasetConfig:
-  dataset_path: "path_to_dataset"
+  dataset_path: "/home/ec2-user/data/parquet/MDB/data@24000/0000.parquet"
   dataset_name: "MDB"
   demucs_separated: false
   splits: null
 
 
 inference:
-  checkpoint_path: "path_to_checkpoint"
+  checkpoint_path: "/home/ec2-user/ADT_STR/outputs/TMIDT"
   batch_size: 1
   max_length: 1000
   beam_size: 5
   use_beam_search: false
   instrument: "drums"
   max_samples: 4096
-  output_path: "path_to_output"
+  output_path: "/home/ec2-user/ADT_STR/results/TMIDT/MDB_inference/"
 
 logging:
   log_level: "INFO"

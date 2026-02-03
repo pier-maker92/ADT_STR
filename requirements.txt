@@ -9,4 +9,4 @@ h5py
 pedalboard
 wandb
 transformers[torch]
-# pytorch-fast-transformers: install after with --no-build-isolation (see install.sh)
+mir_eval

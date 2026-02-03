@@ -96,7 +96,6 @@ class TrainDataset(Dataset):
             num_workers=num_workers,
         )
 
-
 class TMIDTDataset(TrainDataset):
     def __init__(self, config: TMIDTDatasetConfig, tokenizer: MidiTokenizer):
         super().__init__(config, tokenizer)
@@ -107,7 +106,7 @@ class TMIDTDataset(TrainDataset):
             config.dataset_path,
         )["train"]
         self.tokenizer = tokenizer
-        num_proc = 1  # min(32, os.cpu_count())
+        num_proc = min(32, os.cpu_count())
 
         if not config.random_velocity_prob:
             # map notes to Gm_custom
@@ -119,7 +118,7 @@ class TMIDTDataset(TrainDataset):
                 "When the flag random_velocity_prob is True, the velocity will be randomly generated each time when an item is drawn, and the tokenization preprocess will be skipped in favour of a on-the-fly tokenization."
             )
 
-        self.dataset = self.dataset.map(self._get_audio, num_proc=num_proc)
+        #self.dataset = self.dataset.map(self._get_audio_for_mapping, num_proc=num_proc)
 
     def _map_notes_to_Gm_custom(
         self, example
@@ -129,8 +128,8 @@ class TMIDTDataset(TrainDataset):
         example["notes"] = self.tokenizer.map_notes_to_Gm_custom(notes)
         return example
 
-    def _get_audio(self, example):
-        audio = torch.from_numpy(np.frombuffer(example["audio"], dtype=np.float16))
+    def _get_audio_for_mapping(self, example):
+        audio = torch.from_numpy(np.frombuffer(example["audio"], dtype=np.float32))
         sample_rate = example["sample_rate"]
         if sample_rate != self.sample_rate:
             resampler = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
@@ -138,6 +137,15 @@ class TMIDTDataset(TrainDataset):
         # normalize audio
         example["audio"] = audio / (audio.abs().max() + 1e-8)
         return example
+    
+    def _get_audio(self, audio, sample_rate):
+        audio = torch.from_numpy(np.frombuffer(audio, dtype=np.float32))
+        if sample_rate != self.sample_rate:
+            resampler = torchaudio.transforms.Resample(sample_rate, self.sample_rate)
+            audio = resampler(audio)
+        # normalize audio
+        audio = audio / (audio.abs().max() + 1e-8)
+        return audio
 
     def __getitem__(self, index):
         if random.random() < self.empty_tokens_percentage:
@@ -154,7 +162,7 @@ class TMIDTDataset(TrainDataset):
         else:
             notes = item["notes"]
             tokens = item["tokens"]
-        wavs = torch.tensor(item["audio"])
+        wavs = torch.tensor(self._get_audio(item["audio"], item["sample_rate"])) # item["audio"] 
         return wavs, tokens
 
     def get_dataloader(self, batch_size: int, shuffle: bool, num_workers: int):
@@ -250,7 +258,7 @@ if __name__ == "__main__":
     dataloader = dataset.get_dataloader(batch_size=4, shuffle=False, num_workers=4)
 
     counter = 0
-    sanity_check_path = "/Users/pierfrancescomelucci/Research/Playground/Sony/ADT_STR/sanity_check"
+    sanity_check_path = "/home/ec2-user/ADT_STR/sanity_check"
     os.makedirs(sanity_check_path, exist_ok=True)
     for batch in tqdm(dataloader, desc="Processing dataset"):
         # save wav in sanity check using torchaudio
