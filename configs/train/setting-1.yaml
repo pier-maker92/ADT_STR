@@ -19,7 +19,7 @@ logging:
 model:
   enc_layers: 4
   dec_layers: 4
-  d_query: 128
+  d_query: 128 # please note that the attention dimension is d_query * nhead, so the total dimension is 768
   nhead: 6
   dropout: 0.1
 
