@@ -5,11 +5,30 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import argparse
 import shutil
+import yaml
 from pathlib import Path
-from utils import load_yaml, recursive_merge
 from config import ClapConfig
 from tqdm import tqdm
+from typing import Dict
 
+def load_yaml(config_path: str):
+    with open(config_path, "r") as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+    return config
+
+def recursive_merge(base: Dict, override: Dict) -> Dict:
+    """Recursively merge override into base and return the merged dict.
+
+    - For dict values: merge recursively
+    - For other types: override replaces base
+    """
+    for key, override_value in (override or {}).items():
+        base_value = base.get(key)
+        if isinstance(base_value, dict) and isinstance(override_value, dict):
+            base[key] = recursive_merge(dict(base_value), override_value)
+        else:
+            base[key] = override_value
+    return base
 
 def main() -> None:
     parser = argparse.ArgumentParser()
@@ -22,7 +41,7 @@ def main() -> None:
     args = parser.parse_args()
 
     config_path = Path(args.config_path)
-    default_path = Path(__file__).parent / "config_default.yaml"
+    default_path = "/home/ec2-user/ADT_STR/configs/config_default.yaml"
 
     cfg = load_yaml(default_path)
     experiment_cfg = load_yaml(config_path)

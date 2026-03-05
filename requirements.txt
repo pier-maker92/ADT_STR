@@ -1,5 +1,5 @@
-torch
-torchaudio
+torch==2.8.0
+torchaudio==2.8.0
 numpy
 pandas
 matplotlib
@@ -10,3 +10,5 @@ pedalboard
 wandb
 transformers[torch]
 mir_eval
+pretty_midi
+joblib

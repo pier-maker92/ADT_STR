@@ -3,18 +3,38 @@ import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import yaml
 import torch
+import shutil
 import argparse
 import torchaudio
-import audio_process
-import shutil
 from tqdm import tqdm
 from glob import glob
+from typing import Dict
 from pathlib import Path
 from config import ClapConfig
-from clap_encoder import ClapWrapper
-from config.utils import load_yaml, recursive_merge
+from modules.clap_encoder import ClapWrapper
 
+
+def load_yaml(config_path: str):
+    with open(config_path, "r") as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+    return config
+
+
+def recursive_merge(base: Dict, override: Dict) -> Dict:
+    """Recursively merge override into base and return the merged dict.
+
+    - For dict values: merge recursively
+    - For other types: override replaces base
+    """
+    for key, override_value in (override or {}).items():
+        base_value = base.get(key)
+        if isinstance(base_value, dict) and isinstance(override_value, dict):
+            base[key] = recursive_merge(dict(base_value), override_value)
+        else:
+            base[key] = override_value
+    return base
 
 def sort_paths_by_parent_folder(file_paths):
     def sort_key(path):
@@ -39,6 +59,9 @@ def load_audio(path, target_sample_rate: int):
         waveform = resampler(waveform)
     return waveform
 
+def normalize(waveform):
+    return waveform / torch.max(torch.abs(waveform))
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("config_path", type=str, help="Path to the config file")
@@ -53,7 +76,7 @@ if __name__ == "__main__":
         parser.error("--num_bins must be a positive integer that divides 100 evenly")
 
     config_path = Path(config_path)
-    default_path = Path(__file__).parent / "config_default.yaml"
+    default_path = "/home/ec2-user/ADT_STR/configs/config_default.yaml"
 
     # Load and merge configurations
     cfg = load_yaml(default_path)
@@ -81,7 +104,7 @@ if __name__ == "__main__":
     pbar = tqdm(total=len(reference_files), desc="Encoding reference files")
     for i in range(0, len(reference_files), clap_cfg.batch_size):
         batch = [
-            audio_process.normalize(load_audio(file, clap_cfg.sample_rate))
+            normalize(load_audio(file, clap_cfg.sample_rate))
             for file in reference_files[i : i + clap_cfg.batch_size]
         ]
         embeddings = clap_wrapper.get_audio_features(batch)
@@ -102,7 +125,7 @@ if __name__ == "__main__":
     pbar_sp = tqdm(total=len(wav_files), desc="Encoding sample pack files")
     for i in range(0, len(wav_files), clap_cfg.batch_size):
         batch = [
-            audio_process.normalize(load_audio(file, clap_cfg.sample_rate))
+            normalize(load_audio(file, clap_cfg.sample_rate))
             for file in wav_files[i : i + clap_cfg.batch_size]
         ]
         embeddings = clap_wrapper.get_audio_features(batch)

@@ -175,7 +175,7 @@ class TMIDTDataset(TrainDataset):
         )
 
 
-class LakhDataset(Dataset):
+class LakhDataset(TrainDataset):
     def __init__(self, config: LakhDatasetConfig, tokenizer: MidiTokenizer, synthetiser: SynthDrum):
         self.config = config
         self.sample_rate = config.sample_rate
