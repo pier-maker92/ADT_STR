@@ -55,7 +55,7 @@ def main() -> None:
     if not input_root.exists():
         raise FileNotFoundError(f"Input root does not exist: {input_root}")
 
-    output_path = Path(args.output_hdf5)
+    output_path = Path(f"{args.output_hdf5}@{args.sample_rate}.hdf5")
     if output_path.exists():
         if args.overwrite:
             output_path.unlink()

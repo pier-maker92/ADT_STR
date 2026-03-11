@@ -17,7 +17,7 @@ from transformers import Trainer, TrainingArguments
 from model import ADTModel
 from config import ADTModelConfig
 from model import ComputeMelSpectrogram
-from utils.utils import create_mask, create_mask_plain
+from utils.utils import create_mask_plain
 from modules.synthetiser import SynthDrum, SynthDrumConfig
 from modules.midi_tokenizer import MidiTokenizer, MidiTokenizerConfig
 from utils.config_utils import load_config_from_yaml, deep_merge_dicts
@@ -34,30 +34,31 @@ class ADTTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         """Compute the training loss for the ADT model."""
         model.train()
+        device = next(model.parameters()).device
 
         # Extract inputs
         tokens = inputs["tokens"]  # [batch_size, seq_len]
         wavs = inputs["wavs"]  # [batch_size, wav_len]
         token_lengths = inputs["token_lengths"]
 
-        # Move to device
-        tokens = tokens.to(self.device)
-        wavs = wavs.to(self.device)
-        token_lengths = token_lengths.to(self.device)
+        # Move to model device (correct for single-GPU, DataParallel, and DDP)
+        tokens = tokens.to(device)
+        wavs = wavs.to(device)
+        token_lengths = token_lengths.to(device)
 
         # Create target input and output for teacher forcing
         tgt_input = tokens[:, :-1]
         labels = tokens[:, 1:]
 
-        # Create masks
+        # Padding mask only (causal mask is built inside model to avoid DataParallel splitting (T,T))
         tgt_seq_len = tgt_input.size(1)
-        tgt_mask, tgt_padding_mask = create_mask_plain(tgt_seq_len, token_lengths, self.device)
+        _, tgt_padding_mask = create_mask_plain(tgt_seq_len, token_lengths, device)
 
         # Forward pass
-        loss = model(src=wavs, tgt=tgt_input, tgt_mask=tgt_mask, tgt_padding_mask=tgt_padding_mask, labels=labels)
+        loss = model(src=wavs, tgt=tgt_input, tgt_mask=None, tgt_padding_mask=tgt_padding_mask, labels=labels)
 
         # Clean up tensors to save memory
-        del tokens, wavs, token_lengths, tgt_input, labels, tgt_mask, tgt_padding_mask
+        del tokens, wavs, token_lengths, tgt_input, labels, tgt_padding_mask
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -72,6 +73,7 @@ class ADTTrainer(Trainer):
 
         model = self.model
         model.eval()
+        device = next(model.parameters()).device
 
         total_loss = 0.0
         num_batches = 0
@@ -79,24 +81,25 @@ class ADTTrainer(Trainer):
         with torch.no_grad():
             for batch in eval_dataset:
                 # Extract batch data
-                tokens = batch["tokens"].to(self.device)
-                wavs = batch["wavs"].to(self.device)
-                token_lengths = batch["token_lengths"].to(self.device)
-                wav_lengths = batch["wav_lengths"].to(self.device)
+                tokens = batch["tokens"].to(device)
+                wavs = batch["wavs"].to(device)
+                token_lengths = batch["token_lengths"].to(device)
+                wav_lengths = batch["wav_lengths"].to(device)
 
-                # Create masks for validation (full sequence)
-                tgt_seq_len = tokens.size(1)
-                tgt_mask = create_mask(tgt_seq_len, token_lengths, self.device)
-                src_mask = None
+                # Same as training: tgt_input = tokens[:, :-1], labels = tokens[:, 1:]
+                tgt_input = tokens[:, :-1]
+                labels = tokens[:, 1:]
+                tgt_seq_len = tgt_input.size(1)
+                _, tgt_padding_mask = create_mask_plain(tgt_seq_len, token_lengths, device)
 
                 # Forward pass
-                loss = model(src=wavs, tgt=tokens, src_mask=src_mask, tgt_mask=tgt_mask)
+                loss = model(src=wavs, tgt=tgt_input, tgt_mask=None, tgt_padding_mask=tgt_padding_mask, labels=labels)
 
                 total_loss += loss.item()
                 num_batches += 1
 
                 # Clean up tensors
-                del tokens, wavs, token_lengths, wav_lengths, tgt_mask, loss
+                del tokens, wavs, token_lengths, wav_lengths, tgt_input, labels, tgt_padding_mask, loss
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
@@ -166,6 +169,20 @@ def create_training_arguments(config: Dict[str, Any]) -> TrainingArguments:
                 latest_checkpoint = max(checkpoints, key=lambda p: p.stat().st_mtime)
                 resume_from_checkpoint = str(latest_checkpoint)
 
+    def _resolve_lr_scheduler_type(cfg):
+        lr_type = cfg.get("lr_scheduler_type", "cosine")
+        min_lr = cfg.get("min_learning_rate")
+        if lr_type == "cosine" and min_lr is not None and float(min_lr) > 0:
+            return "cosine_with_min_lr"
+        return lr_type
+
+    def _get_lr_scheduler_kwargs(cfg):
+        lr_type = cfg.get("lr_scheduler_type", "cosine")
+        min_lr = cfg.get("min_learning_rate")
+        if lr_type == "cosine" and min_lr is not None and float(min_lr) >= 0:
+            return {"min_lr": float(min_lr)}
+        return None
+
     # FIXME just pass **training_cfg to the TrainingArguments
     training_args = TrainingArguments(
         output_dir=str(output_path),
@@ -189,7 +206,8 @@ def create_training_arguments(config: Dict[str, Any]) -> TrainingArguments:
         gradient_checkpointing=False,
         max_grad_norm=float(training_cfg.get("max_grad_norm")),
         optim=training_cfg.get("optim"),
-        lr_scheduler_type=training_cfg.get("lr_scheduler_type"),
+        lr_scheduler_type=_resolve_lr_scheduler_type(training_cfg),
+        lr_scheduler_kwargs=_get_lr_scheduler_kwargs(training_cfg),
         report_to="wandb" if experiment_cfg.get("use_wandb") else "none",
         run_name=run_name,
         seed=experiment_cfg.get("seed"),
@@ -248,7 +266,7 @@ def train(config: Dict[str, Any]):
     logger.info("Creating training arguments...")
     training_args = create_training_arguments(config)
 
-    # Create trainer
+    # Create trainer (multi-GPU: use "accelerate launch train.py config.yaml" or set CUDA_VISIBLE_DEVICES)
     logger.info("Creating trainer...")
     trainer = ADTTrainer(
         model=model,

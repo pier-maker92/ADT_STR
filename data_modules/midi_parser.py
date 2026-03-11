@@ -138,7 +138,7 @@ parser.add_argument(
 )
 if __name__ == "__main__":
     args = parser.parse_args()
-    default_path = "path/to/your/config/file/config_default.yaml"
+    default_path = "/home/ec2-user/ADT_STR/configs/config_default.yaml"
 
     cfg = load_config_from_yaml(default_path)
     if args.config_path:

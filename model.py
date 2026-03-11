@@ -1,11 +1,12 @@
 import math
+from typing import Optional
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from config import ADTModelConfig
 import torchaudio.transforms as T
 from utils.utils import create_mask_plain
-from fast_transformers.builders import TransformerDecoderBuilder, TransformerEncoderBuilder
 
 class TokenEmbedding(nn.Module):
     def __init__(self, vocab_size, emb_size):
@@ -75,7 +76,10 @@ class ComputeMelSpectrogram(torch.nn.Module):
 
     def forward(self, wave):
         wave = wave.to(self.device)
-        mel_spec = self.compute_spec(wave)
+        # Esegui in float32: torchaudio MelSpectrogram + bf16 autocast causano CUBLAS_STATUS_INVALID_VALUE
+        with torch.amp.autocast(device_type="cuda", enabled=False):
+            wave_f32 = wave.float()
+            mel_spec = self.compute_spec(wave_f32)
 
         logmel_spec = torch.log(mel_spec + 1e-10)
         logmel_spec = torch.clamp(logmel_spec, -23, 12)
@@ -102,22 +106,22 @@ class Encoder(nn.Module):
         self.layer_norm = nn.LayerNorm(normalized_shape=self.num_features, elementwise_affine=True)
         self.dropout_layer = nn.Dropout(p=dropout)
 
-        encoder_builder = TransformerEncoderBuilder()
-        encoder_builder.n_layers = enc_layers
-        encoder_builder.n_heads = nhead
-        encoder_builder.feed_forward_dimensions = ffn_hid_dim
-        encoder_builder.query_dimensions = d_query
-        encoder_builder.value_dimensions = d_query
-        encoder_builder.dropout = dropout
-        encoder_builder.attention_type = "full"  # linear
-        encoder_builder.attention_dropout = dropout
-        self.encoder = encoder_builder.get()
+        layer = nn.TransformerEncoderLayer(
+            d_model=self.num_features,
+            nhead=nhead,
+            dim_feedforward=ffn_hid_dim,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=False,
+        )
+        self.encoder = nn.TransformerEncoder(layer, num_layers=enc_layers)
 
     def forward(self, src_emb):
         src_emb = self.dense_layer(src_emb)
         src_emb = self.positional_encoding(src_emb)
         src_emb = self.dropout_layer(src_emb)
-        encoder_output = self.encoder.forward(src_emb)
+        encoder_output = self.encoder(src_emb)
         encoder_output = self.dropout_layer(self.layer_norm(encoder_output))
         return encoder_output
 
@@ -134,30 +138,33 @@ class Decoder(nn.Module):
         self.dropout_layer = nn.Dropout(p=dropout)
         self.generator = nn.Linear(self.num_features, tgt_vocab_size)
 
-        decoder_builder = TransformerDecoderBuilder()
-        decoder_builder.n_layers = dec_layers
-        decoder_builder.n_heads = nhead
-        decoder_builder.feed_forward_dimensions = ffn_hid_dim
-        decoder_builder.query_dimensions = d_query
-        decoder_builder.value_dimensions = d_query
-        decoder_builder.dropout = dropout
-        decoder_builder.attention_dropout = dropout
-        decoder_builder.self_attention_type = "full"  # causal-linear
-        decoder_builder.cross_attention_type = "full"  # linear
-        self.decoder = decoder_builder.get()
+        layer = nn.TransformerDecoderLayer(
+            d_model=self.num_features,
+            nhead=nhead,
+            dim_feedforward=ffn_hid_dim,
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=False,
+        )
+        self.decoder = nn.TransformerDecoder(layer, num_layers=dec_layers)
 
     def forward(self, tgt, encoder_output, tgt_mask, tgt_padding_mask):
         tgt_emb = self.positional_encoding(self.tgt_tok_emb(tgt))
         tgt_emb = self.dropout_layer(tgt_emb)
-        decoder_outputs = self.decoder.forward(
+        # bf16-safe and PyTorch same-type: use additive float masks (0 / -1e4) instead of bool (-inf)
+        if tgt_mask is not None:
+            tgt_mask = torch.zeros_like(tgt_mask, dtype=tgt_emb.dtype, device=tgt_mask.device).masked_fill_(tgt_mask, -1e4)
+        if tgt_padding_mask is not None and tgt_padding_mask.dtype == torch.bool:
+            tgt_padding_mask = torch.zeros_like(tgt_padding_mask, dtype=tgt_emb.dtype, device=tgt_padding_mask.device).masked_fill_(tgt_padding_mask, -1e4)
+        decoder_outputs = self.decoder(
             tgt_emb,
-            memory=encoder_output,
-            x_mask=tgt_mask,
-            x_length_mask=tgt_padding_mask,
+            encoder_output,
+            tgt_mask=tgt_mask,
+            tgt_key_padding_mask=tgt_padding_mask,
             memory_mask=None,
-            memory_length_mask=None,
+            memory_key_padding_mask=None,
         )
-
         return self.generator(decoder_outputs)
 
 
@@ -202,20 +209,19 @@ class ADTModel(nn.Module):
         self,
         src: torch.FloatTensor,
         tgt: torch.LongTensor,
-        tgt_mask: torch.BoolTensor,
-        tgt_padding_mask: torch.BoolTensor,
+        tgt_mask: Optional[torch.BoolTensor],
+        tgt_padding_mask: Optional[torch.BoolTensor],
         labels: torch.LongTensor,
     ) -> torch.FloatTensor:
         src_emb = self.compute_spectrogram(src)
         src_emb = self.project_to_mel(src_emb)
         encoder_out = self.encoder(src_emb)
 
-        logits = self.decoder(
-            tgt.float(),
-            encoder_out.float(),
-            tgt_mask,
-            tgt_padding_mask,
-        )
+        # Build causal mask inside model so DataParallel does not split (T,T) across devices
+        if tgt_mask is None:
+            tgt_seq_len = tgt.size(1)
+            tgt_mask, _ = create_mask_plain(tgt_seq_len, None, tgt.device)
+        logits = self.decoder(tgt, encoder_out, tgt_mask, tgt_padding_mask)
         loss = self._loss_fn(logits, labels)
         return loss
 
@@ -257,9 +263,9 @@ class ADTModel(nn.Module):
         generated = torch.full((batch_size, 1), start_token, dtype=torch.long, device=device)
         # Greedy decoding loop
         for step in range(max_length - 1):
-            # Create causal mask for current sequence length
+            # Create causal mask for current sequence length (no padding in decoding)
             seq_len = generated.shape[1]
-            tgt_mask, tgt_padding_mask = create_mask_plain(seq_len, seq_len, device)
+            tgt_mask, tgt_padding_mask = create_mask_plain(seq_len, None, device)
 
             # Get decoder output
             logits = self.decoder(

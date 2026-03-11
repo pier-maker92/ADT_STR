@@ -5,10 +5,10 @@ shared:
   sample_rate: 24000
 
 EvalDataPreprocess:
-  dataset_path: "/workspace/data/midi"
-  output_path: "/workspace/data"
+  dataset_path: "/home/ec2-user/midi"
+  output_path: "/home/ec2-user/ADT_STR/data"
   dataset_name: "TMIDT"
   audio_extension: "mp3"
   dataset_size: "m"
   drums_only: true
-  num_audio_files: 1500
+  num_audio_files: null

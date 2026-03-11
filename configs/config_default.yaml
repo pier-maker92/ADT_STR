@@ -42,12 +42,14 @@ training:
   warmup_ratio: 0.1
   gradient_accumulation_steps: 1
   mixed_precision: "no"
-  max_dataloader_num_workers: 16
+  max_dataloader_num_workers: 0
   weight_decay: 1e-5
   eval_strategy: "no"
   max_grad_norm: 1.0
   optim: "adamw_torch"
   lr_scheduler_type: "cosine"
+  # Con cosine: learning rate non scende sotto min_learning_rate (solo se impostato)
+  min_learning_rate: null
 
 
 logging:

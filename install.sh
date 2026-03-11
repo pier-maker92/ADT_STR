@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Install deps. pytorch-fast-transformers needs torch at build time; pip's
-# isolated build doesn't see it, so we install it with --no-build-isolation.
+# Use conda env adt3
 set -e
+source "$(conda info --base)/etc/profile.d/conda.sh"
+conda activate adt3
 pip install -r requirements.txt
-pip install --no-build-isolation pytorch-fast-transformers
