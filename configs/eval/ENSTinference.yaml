@@ -1,5 +1,5 @@
 experiment:
-  run_name: "inference-TMIDT-on-ENST"
+  run_name: "inference-setting-1"
 
 shared:
   sample_rate: 24000
@@ -29,14 +29,14 @@ EvalDatasetConfig:
   splits: null
 
 inference:
-  checkpoint_path: "/home/ec2-user/ADT_STR/outputs/TMIDT"
+  checkpoint_path: "/home/ec2-user/ADT_STR/outputs/setting-1"
   batch_size: 1
   max_length: 1000
   beam_size: 5
   use_beam_search: false
   instrument: "drums"
   max_samples: 4096
-  output_path: "/home/ec2-user/ADT_STR/results/TMIDT/ENST_inference/"
+  output_path: "/home/ec2-user/ADT_STR/results/setting-1/ENST_inference/"
 
 logging:
   log_level: "INFO"

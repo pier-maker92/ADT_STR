@@ -3,6 +3,6 @@ shared:
 
 clap_config:
   model_name: "laion/clap-htsat-fused"
-  batch_size: 256
-  sample_pack_root: "path_to_sample_pack"
-  reference_root: "path_to_reference"
+  batch_size: 32
+  sample_pack_root: "/home/ec2-user/data/zippone/SampleToUse"
+  reference_root: "/home/ec2-user/data/zippone/GM/GM_Mapped_Reduced"

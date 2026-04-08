@@ -3,7 +3,7 @@ import os
 import sys
 import logging
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict, Optional
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -169,18 +169,30 @@ def create_training_arguments(config: Dict[str, Any]) -> TrainingArguments:
                 latest_checkpoint = max(checkpoints, key=lambda p: p.stat().st_mtime)
                 resume_from_checkpoint = str(latest_checkpoint)
 
+    def _positive_min_learning_rate(cfg) -> Optional[float]:
+        """Floor LR for cosine annealing; None means use default cosine decay toward ~0."""
+        raw = cfg.get("min_learning_rate")
+        if raw is None:
+            return None
+        m = float(raw)
+        if m <= 0:
+            return None
+        return m
+
     def _resolve_lr_scheduler_type(cfg):
         lr_type = cfg.get("lr_scheduler_type", "cosine")
-        min_lr = cfg.get("min_learning_rate")
-        if lr_type == "cosine" and min_lr is not None and float(min_lr) > 0:
-            return "cosine_with_min_lr"
+        min_lr = _positive_min_learning_rate(cfg)
+        # cosine_warmup_with_min_lr: stesso decay cosine fra LR iniziale e min_lr, ma l'ultimo
+        # training step coincide con min_lr (a differenza di cosine_with_min_lr in HF).
+        if lr_type == "cosine" and min_lr is not None:
+            return "cosine_warmup_with_min_lr"
         return lr_type
 
     def _get_lr_scheduler_kwargs(cfg):
         lr_type = cfg.get("lr_scheduler_type", "cosine")
-        min_lr = cfg.get("min_learning_rate")
-        if lr_type == "cosine" and min_lr is not None and float(min_lr) >= 0:
-            return {"min_lr": float(min_lr)}
+        min_lr = _positive_min_learning_rate(cfg)
+        if lr_type == "cosine" and min_lr is not None:
+            return {"min_lr": min_lr}
         return None
 
     # FIXME just pass **training_cfg to the TrainingArguments

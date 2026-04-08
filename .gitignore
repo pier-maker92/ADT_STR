@@ -1,5 +1,27 @@
 results/
 
+# Training / checkpoint weights
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.safetensor
+
+# Audio
+*.wav
+
+# Weights & Biases
+wandb/
+
+# Run artifacts and dumps (W&B metadata, trainer_state, metrics, etc.)
+*.json
+
+# Debug logs and traces
+*.debug
+debug.log
+**/debug.log
+**/logs/debug.log
+
 # Python cache files
 __pycache__/
 *.py[cod]

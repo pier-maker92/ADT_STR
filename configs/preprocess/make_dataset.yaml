@@ -1,7 +1,8 @@
 preprocess:
-  dataset_name: "lakh_matched"
+  dataset_name: lakh_matched
+  midi_root: "/home/ec2-user/data/lmd_matched"
   # Output location (prefix for shard filenames)
-  dump_path: "path_to_dump"
+  dump_path: "/home/ec2-user/data/parquet"
   only_drum: true
 
   partitions: null

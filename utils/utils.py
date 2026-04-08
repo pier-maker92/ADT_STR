@@ -5,41 +5,37 @@ import torchaudio
 import numpy as np
 from pathlib import Path
 from collections import Counter
-from fast_transformers.masking import TriangularCausalMask, BaseMask, LengthMask
 
 
-class myLengthMask(BaseMask):
-    """Provide a BaseMask interface for lengths. Mostly to be used with
-    sequences of different lengths.
+def _causal_mask(seq_len: int, device=None):
+    """Causal (triangular) mask for decoder self-attention.
+    Returns (seq_len, seq_len) bool tensor where True = masked (cannot attend).
+    Position i cannot attend to position j when j > i.
     """
-    def __init__(self, lengths=None, max_len=None, device=None, manual_bool_matrix=None):
-        self._device = device or (lengths.device if lengths is not None else None)
+    return torch.triu(torch.ones(seq_len, seq_len, device=device, dtype=torch.bool), diagonal=1)
 
-        # 初期化時に `bool_matrix` が渡されていれば、それを使用
-        if manual_bool_matrix is not None:
-            self._bool_matrix = manual_bool_matrix.to(self._device)
-        elif lengths is not None:
-            self._lengths = lengths.clone().to(self._device)
-            self._max_len = max_len or self._lengths.max()
-            self._bool_matrix = None  # `lengths` から `bool_matrix` を計算
-        else:
-            raise ValueError("Either `lengths` or `bool_matrix` must be specified")
 
-    @property
-    def bool_matrix(self):
-        """
-        If `bool_matrix` is already set, use it.
-        Otherwise, compute it based on the `lengths`.
-        """
-        if self._bool_matrix is None:
-            self._bool_matrix = create_bool_matrix(self._lengths, self._max_len, mask_prob=0.0)
-        return self._bool_matrix
+def _key_padding_mask_from_lengths(lengths, seq_len, device=None):
+    """Key padding mask for PyTorch Transformer (True = ignore/padding).
+    lengths: (N,) valid length per batch. Returns (N, seq_len) bool."""
+    if device is None and isinstance(lengths, torch.Tensor):
+        device = lengths.device
+    lengths_t = lengths.detach().clone() if isinstance(lengths, torch.Tensor) else torch.tensor(lengths, device=device)
+    # True where position >= length (i.e. padding)
+    return torch.arange(seq_len, device=device).unsqueeze(0) >= lengths_t.unsqueeze(1)
 
-def create_mask_plain(tgt_seq_len, tgt_lengths = None, device = None):
-    tgt_mask = TriangularCausalMask(tgt_seq_len, device = device)
+
+def create_mask_plain(tgt_seq_len, tgt_lengths=None, device=None):
+    """Create causal mask and optional key padding mask (PyTorch convention).
+    Returns:
+        tgt_mask: (tgt_seq_len, tgt_seq_len) bool, True = masked
+        tgt_padding_mask: (N, tgt_seq_len) bool, True = padding; or None if tgt_lengths is None
+    """
+    tgt_mask = _causal_mask(tgt_seq_len, device)
     if tgt_lengths is None:
-        return tgt_mask 
-    tgt_padding_mask = LengthMask(torch.tensor(tgt_lengths), device = device)
+        return tgt_mask, None
+    tgt_lengths_t = tgt_lengths.detach().clone() if isinstance(tgt_lengths, torch.Tensor) else torch.tensor(tgt_lengths, device=device)
+    tgt_padding_mask = _key_padding_mask_from_lengths(tgt_lengths_t, tgt_seq_len, device)
     return tgt_mask, tgt_padding_mask
 
 
@@ -80,15 +76,22 @@ def create_bool_matrix(lengths, max_len=None, mask_prob=0.0):
 
     return bool_matrix
 
-def create_mask(tgt_seq_len, tgt_lengths = None, device = None, inst_mask_proba=0.0):
-    tgt_mask = TriangularCausalMask(tgt_seq_len-1, device = device)
+def create_mask(tgt_seq_len, tgt_lengths=None, device=None, inst_mask_proba=0.0):
+    """Create causal mask and padding masks for full sequence (with inst masking).
+    Returns:
+        tgt_mask: (tgt_seq_len-1, tgt_seq_len-1) causal bool mask
+        tgt_input_padding_mask: (N, tgt_seq_len-1) bool, True = padding (PyTorch convention)
+        tgt_out_padding_mask: (N, tgt_seq_len-1) bool, True = valid (for loss masking)
+    """
+    seq_len = tgt_seq_len - 1
+    tgt_mask = _causal_mask(seq_len, device)
     if tgt_lengths is None:
-        return tgt_mask 
+        return tgt_mask, None, None
     tgt_bool_matrix = create_bool_matrix(tgt_lengths, mask_prob=inst_mask_proba)
-    tgt_input_bool_matrix = tgt_bool_matrix[:, :-1]
+    tgt_input_valid = tgt_bool_matrix[:, :-1]
     tgt_out_padding_mask = tgt_bool_matrix[:, 1:]
-    tgt_input_padding_mask = myLengthMask(device=device, manual_bool_matrix=tgt_input_bool_matrix)
-    
+    # PyTorch key_padding_mask: True = ignore
+    tgt_input_padding_mask = ~tgt_input_valid
     return tgt_mask, tgt_input_padding_mask, tgt_out_padding_mask
 
 
