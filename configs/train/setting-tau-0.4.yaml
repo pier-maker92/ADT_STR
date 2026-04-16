@@ -1,6 +1,6 @@
 experiment:
   project_name: "adt-training"
-  run_name: "setting-tau-0.6"
+  run_name: "setting-tau-0.4"
   use_wandb: true
 
 training:
@@ -52,7 +52,7 @@ tokenizer:
 
 synthetiser:
   oneshot_path: "/home/ec2-user/data/oneshot"
-  similarity_threshold: 0.6
+  similarity_threshold: 0.4
   max_hat_std_velocity: 0.15
   max_hat_mean_velocity: 0.1
   max_cymbals_std_velocity: 0.15
