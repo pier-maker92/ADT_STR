@@ -1,7 +1,24 @@
 import subprocess
 import os
+import sys
 from glob import glob
 from pathlib import Path
+
+
+def _check_soundfile_for_demucs() -> None:
+    """Demucs salva gli stem con torchaudio: senza backend (es. soundfile) su macOS fallisce."""
+    try:
+        import soundfile  # noqa: F401
+    except ImportError:
+        print(
+            "Manca il pacchetto 'soundfile' (backend torchaudio per WAV).\n"
+            "Installa con: pip install soundfile\n"
+            "Vedi anche: https://github.com/facebookresearch/demucs/issues/570",
+            file=sys.stderr,
+        )
+        raise RuntimeError(
+            "soundfile non installato: torchaudio non può salvare i WAV prodotti da Demucs."
+        ) from None
 
 
 def separate_drums(files, output_dir="demucs_output", model="htdemucs"):
@@ -17,6 +34,7 @@ def separate_drums(files, output_dir="demucs_output", model="htdemucs"):
     model : str
         Demucs model to use (default: htdemucs).
     """
+    _check_soundfile_for_demucs()
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 

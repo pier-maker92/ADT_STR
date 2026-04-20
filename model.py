@@ -261,7 +261,8 @@ class ADTModel(nn.Module):
 
         # Initialize with start token
         generated = torch.full((batch_size, 1), start_token, dtype=torch.long, device=device)
-        # Greedy decoding loop
+        finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
+        # Greedy decoding loop (per-row finished mask so batch items can end at different steps)
         for step in range(max_length - 1):
             # Create causal mask for current sequence length (no padding in decoding)
             seq_len = generated.shape[1]
@@ -275,16 +276,14 @@ class ADTModel(nn.Module):
                 tgt_padding_mask=None,
             )
 
-            # Get next token (greedy)
+            # Get next token (greedy); freeze finished rows at EOS so they do not keep consuming argmax noise
             next_token_logits = logits[:, -1, :]  # Last position
             next_token = torch.argmax(next_token_logits, dim=-1)  # Greedy selection
-
-            # Check for end token
-            if torch.all(next_token == end_token):
-                break
-
-            # Append next token
+            next_token = torch.where(finished, torch.full_like(next_token, end_token), next_token)
             generated = torch.cat([generated, next_token.unsqueeze(1)], dim=1)
+            finished = finished | (next_token == end_token)
+            if torch.all(finished):
+                break
 
         return generated
 
@@ -295,8 +294,8 @@ class ADTModel(nn.Module):
         tgt_mask: torch.BoolTensor,
         beam_size: int = 5,
         max_length: int = 1000,
-        start_token: int = 0,
-        end_token: int = 2,
+        start_token: int = 2,
+        end_token: int = 3,
         length_penalty: float = 1.0,
     ) -> torch.LongTensor:
         """

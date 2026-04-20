@@ -7,6 +7,24 @@ from pathlib import Path
 from collections import Counter
 
 
+def select_inference_device() -> torch.device:
+    """Prefer CUDA, then Apple MPS, else CPU."""
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    mps_backend = getattr(torch.backends, "mps", None)
+    if mps_backend is not None and mps_backend.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def empty_accelerator_cache(device: torch.device) -> None:
+    """Release GPU / MPS cache between batches when supported."""
+    if device.type == "cuda" and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    elif device.type == "mps" and hasattr(torch, "mps") and torch.mps.is_available():
+        torch.mps.empty_cache()
+
+
 def _causal_mask(seq_len: int, device=None):
     """Causal (triangular) mask for decoder self-attention.
     Returns (seq_len, seq_len) bool tensor where True = masked (cannot attend).

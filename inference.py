@@ -27,9 +27,15 @@ from config import ADTModelConfig
 from model import ComputeMelSpectrogram
 from torch.nn.utils.rnn import pad_sequence
 from utils.mapping_utils import MappingUtils
+from utils.utils import empty_accelerator_cache, select_inference_device
 from modules.midi_tokenizer import MidiTokenizer, MidiTokenizerConfig
 from utils.config_utils import load_config_from_yaml, deep_merge_dicts
-from data_modules.eval_dataset import ENSTDataset, ENSTDatasetConfig, MDBDataset, MDBDatasetConfig
+from data_modules.eval_dataset import (
+    ENSTDataset,
+    ENSTDatasetConfig,
+    MDBDataset,
+    MDBDatasetConfig,
+)
 
 
 class DrumConfusionMatrix:
@@ -47,7 +53,7 @@ class DrumConfusionMatrix:
     def _label(self, pitch):
         return self.mapping.get(int(pitch), "Other")
 
-    def update(self, ref_notes, pred_notes):
+    def update(self, ref_notes, pred_notes, exclude_ref_empty: bool = False):
         refs = [(i, float(r[0]), int(r[2])) for i, r in enumerate(ref_notes)]
         preds = [(j, float(p[0]), int(p[2])) for j, p in enumerate(pred_notes)]
 
@@ -98,8 +104,9 @@ class DrumConfusionMatrix:
                 self.matrix.loc[r_lbl, "False Negative"] += 1
 
         fp_count = 0
+        skip_fp = exclude_ref_empty and len(refs) == 0
         for j, p_on, p_pi in preds:
-            if j not in used_preds:
+            if j not in used_preds and not skip_fp:
                 self.matrix.loc["False Positive", self._label(p_pi)] += 1
                 fp_count += 1
         if fp_count > 100:
@@ -170,17 +177,25 @@ def load_model(
     model = ADTModel(config=config, compute_spectrogram=compute_spectrogram)
 
     # Load checkpoint from safetensors
-    safetensors_path = f"{checkpoint_path}/model.safetensors"
+    safetensors_candidates = [
+        f"{checkpoint_path}/model.safetensors",
+        f"{checkpoint_path}/model.safetensor",
+    ]
     pytorch_path = f"{checkpoint_path}/pytorch_model.bin"
+    safetensors_path = next(
+        (p for p in safetensors_candidates if os.path.exists(p)), None
+    )
 
     # Try to load from safetensors first, then fallback to pytorch format
-    if os.path.exists(safetensors_path):
+    if safetensors_path is not None:
         try:
             state_dict = load_file(safetensors_path)
             model.load_state_dict(state_dict)
         except Exception as e:
             if logger:
-                logger.warning(f"Failed to load from safetensors ({safetensors_path}): {e}")
+                logger.warning(
+                    f"Failed to load from safetensors ({safetensors_path}): {e}"
+                )
                 logger.info("Falling back to pytorch format...")
             checkpoint = torch.load(pytorch_path, map_location=device)
 
@@ -204,8 +219,9 @@ def load_model(
             # Assume the checkpoint is just the state dict
             model.load_state_dict(checkpoint)
     else:
+        tried = ", ".join([*safetensors_candidates, pytorch_path])
         raise FileNotFoundError(
-            f"No checkpoint found at {checkpoint_path}. Looked for both model.safetensors and pytorch_model.bin"
+            f"No checkpoint found at {checkpoint_path}. Looked for: {tried}"
         )
 
     model.to(device)
@@ -217,6 +233,7 @@ def load_model(
 def compute_metrics(
     ref_notes: torch.FloatTensor,
     est_notes: torch.FloatTensor,
+    exclude_ref_empty: bool = False,
 ) -> Tuple[int, int, int]:
     """Compute precision, recall, F1 using mir_eval."""
 
@@ -225,7 +242,11 @@ def compute_metrics(
         return 0, 0, 0
     elif len(ref_notes) == 0:
         # Reference empty but estimation not - all false positives
-        return 0, 0, len(est_notes)
+        return (
+            0,
+            0,
+            len(est_notes) if not exclude_ref_empty else 0,
+        )
     elif len(est_notes) == 0:
         # Estimation empty but reference not - all false negatives
         return 0, len(ref_notes), 0
@@ -252,8 +273,16 @@ def compute_metrics(
     return TP, FN, FP
 
 
-def compute_per_label_metrics(pred_notes: np.ndarray, gt_notes: np.ndarray, per_label_metrics: dict) -> dict:
+def compute_per_label_metrics(
+    pred_notes: np.ndarray,
+    gt_notes: np.ndarray,
+    per_label_metrics: dict,
+    exclude_ref_empty: bool = False,
+) -> dict:
     """Select a subset of the predictions."""
+    # Only skip FPs when the full reference has no events; per-label empty GT
+    # must still count cross-class predictions as FP for that label.
+    exclude_fp_for_slices = exclude_ref_empty and len(gt_notes) == 0
     ADTOF_label_mapping = MappingUtils().ADTOF_label_mapping
     for pitch, label in ADTOF_label_mapping.items():
         if label == "Other":
@@ -266,7 +295,9 @@ def compute_per_label_metrics(pred_notes: np.ndarray, gt_notes: np.ndarray, per_
             gt_notes_label = gt_notes[gt_notes[:, 2] == pitch]
         else:
             gt_notes_label = []
-        tp, fn, fp = compute_metrics(gt_notes_label, pred_notes_label)
+        tp, fn, fp = compute_metrics(
+            gt_notes_label, pred_notes_label, exclude_fp_for_slices
+        )
         per_label_metrics[label]["tp"] += tp
         per_label_metrics[label]["fn"] += fn
         per_label_metrics[label]["fp"] += fp
@@ -282,14 +313,21 @@ def run_inference(
     beam_size: int = 5,
     use_beam_search: bool = True,
     output_path: str = None,
+    max_decode_length: int = 1024,
+    exclude_ref_empty: bool = False,
 ) -> Dict[str, float]:
     """Run inference and compute metrics."""
     TP, FN, FP = 0, 0, 0
+    max_len = max(2, int(max_decode_length))
 
     def aggregate_metrics(TP, FN, FP):
         precision = TP / (TP + FP) if (TP + FP) else 0.0
         recall = TP / (TP + FN) if (TP + FN) else 0.0
-        f_measure = (2 * precision * recall / (precision + recall)) if (precision + recall) else 0.0
+        f_measure = (
+            (2 * precision * recall / (precision + recall))
+            if (precision + recall)
+            else 0.0
+        )
         return {
             "precision": precision,
             "recall": recall,
@@ -303,7 +341,9 @@ def run_inference(
     # Prepare per-label metrics containers
     mu = MappingUtils()
     confusion_matrix = DrumConfusionMatrix(
-        mu.ADTOF_label_mapping if tokenizer.ADTOF_mapping else mu.GM_reduced_name_convention
+        mu.ADTOF_label_mapping
+        if tokenizer.ADTOF_mapping
+        else mu.GM_reduced_name_convention
     )
 
     # Track where GT HH notes get misclassified
@@ -317,15 +357,17 @@ def run_inference(
                 continue
             batch_size = wavs.shape[0]
 
-            # Generate predictions
+            # Generate predictions (BOS/EOS must match tokenizer for both greedy and beam)
             kwargs = {
                 "src": wavs,
                 "src_mask": None,
                 "tgt_mask": None,
-                "max_length": 1024,
+                "max_length": max_len,
+                "start_token": tokenizer.BOS_token,
+                "end_token": tokenizer.EOS_token,
             }
             if use_beam_search:
-                kwargs["beam_size"] = beam_size
+                kwargs["beam_size"] = beam_size if beam_size is not None else 5
             sample_fn = model.sample if not use_beam_search else model.beam_search
             tokens_pred = sample_fn(**kwargs)
 
@@ -342,20 +384,31 @@ def run_inference(
                 if gt.shape[-1] == 0:
                     gt = []
                 pred_notes = tokenizer.decode(pred_tokens)
+                breakpoint()
                 if not pred_notes.shape[-1] == 0:
                     pred_notes = pred_notes[pred_notes[:, 3] >= 0]
                 pred_notes = pred_notes.detach().cpu().numpy()
+                breakpoint()
                 pred_notes = np.unique(pred_notes, axis=0)
 
                 # Compute metrics
-                cur_TP, cur_FN, cur_FP = compute_metrics(gt, pred_notes)
+                cur_TP, cur_FN, cur_FP = compute_metrics(
+                    gt, pred_notes, exclude_ref_empty
+                )
                 TP += cur_TP
                 FN += cur_FN
                 FP += cur_FP
 
                 # Per-label metrics for this item
-                per_label_metrics = compute_per_label_metrics(pred_notes, gt, per_label_metrics)
-                confusion_matrix.update(gt, pred_notes)
+                per_label_metrics = compute_per_label_metrics(
+                    pred_notes,
+                    gt,
+                    per_label_metrics,
+                    exclude_ref_empty,
+                )
+                confusion_matrix.update(
+                    gt, pred_notes, exclude_ref_empty=exclude_ref_empty
+                )
                 if not os.path.exists(output_path):
                     os.makedirs(output_path, exist_ok=True)
                 confusion_matrix.to_csv(
@@ -365,8 +418,7 @@ def run_inference(
             del wavs, tokens_pred
 
             gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            empty_accelerator_cache(device)
 
     # Aggregate metrics
     final_metrics_no_offset = aggregate_metrics(TP, FN, FP)
@@ -375,14 +427,16 @@ def run_inference(
     for key, value in final_metrics_no_offset.items():
         combined_metrics["all"][f"{key}"] = value
     for label, metrics in per_label_metrics.items():
-        per_label_Aggregate_metrics = aggregate_metrics(metrics["tp"], metrics["fn"], metrics["fp"])
+        per_label_Aggregate_metrics = aggregate_metrics(
+            metrics["tp"], metrics["fn"], metrics["fp"]
+        )
         for key, value in per_label_Aggregate_metrics.items():
             combined_metrics[label][f"{key}"] = value
 
     return combined_metrics
 
 
-def inference(config: Dict[str, Any]):
+def inference(config: Dict[str, Any], exclude_ref_empty: bool = False):
     """Main inference function."""
 
     # Setup logging
@@ -396,8 +450,9 @@ def inference(config: Dict[str, Any]):
     checkpoint_path = inference_section.get("checkpoint_path")
     if not checkpoint_path:
         raise ValueError("inference.checkpoint_path is required")
-    # Setup device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # Setup device: CUDA -> MPS -> CPU
+    device = select_inference_device()
+    logger.info("Device: %s", device)
 
     # Loading model
     logger.info(f"Loading model from checkpoint: {checkpoint_path}")
@@ -421,12 +476,14 @@ def inference(config: Dict[str, Any]):
     elif data_section.get("dataset_name") == "MDB":
         DatasetConfigClass, DatasetClass = MDBDatasetConfig, MDBDataset
     else:
-        raise ValueError(f"Dataset name {data_section.get('dataset_name')} not supported")
+        raise ValueError(
+            f"Dataset name {data_section.get('dataset_name')} not supported"
+        )
     DatasetConfigItem = DatasetConfigClass(
         **data_section,
         **config.get("shared"),
     )
-    num_workers = min(os.cpu_count(), 16)
+    num_workers = 0  # min(os.cpu_count() or 1, 16)
     batch_size = inference_section.get("batch_size")
     dataloader = DatasetClass(DatasetConfigItem, tokenizer).get_dataloader(
         batch_size=batch_size, shuffle=False, num_workers=num_workers
@@ -436,6 +493,8 @@ def inference(config: Dict[str, Any]):
 
     # Run inference
     logger.info("Starting inference...")
+    decode_max = max(2, int(inference_section.get("max_length", 1024)))
+    logger.info("max_length (decode): %d", decode_max)
     metrics = run_inference(
         model=model,
         dataloader=dataloader,
@@ -444,6 +503,8 @@ def inference(config: Dict[str, Any]):
         use_beam_search=inference_section.get("use_beam_search"),
         tokenizer=tokenizer,
         output_path=inference_section.get("output_path"),
+        max_decode_length=decode_max,
+        exclude_ref_empty=exclude_ref_empty,
     )
     # save metrics to json
     with open(inference_section.get("output_path") + "/metrics.json", "w") as f:
@@ -462,18 +523,21 @@ def inference(config: Dict[str, Any]):
     return metrics
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument("config", type=str, help="Path to config file")
-args = parser.parse_args()
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config", type=str, help="Path to config file")
+    parser.add_argument(
+        "-e",
+        "--exclude_ref_empty",
+        action="store_true",
+        help="Exclude false positives when reference is empty",
+    )
+    args = parser.parse_args()
 
     default_config_path = Path(__file__).parent / "configs" / "config_default.yaml"
-    # config
     cfg = load_config_from_yaml(default_config_path)
     experiment_cfg = load_config_from_yaml(args.config)
     merged_cfg = deep_merge_dicts(cfg, experiment_cfg)
-    # merged_cfg["inference"]["checkpoint_path"] = args.checkpoint_path
-    # print("\n *** Evaluating checkpoint: ", args.checkpoint_path, " ***\n")
-    inference(merged_cfg)
+    inference(merged_cfg, exclude_ref_empty=args.exclude_ref_empty)
 
 # usage: python inference.py configs/eval/MDBinference.yaml
