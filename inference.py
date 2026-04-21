@@ -384,11 +384,9 @@ def run_inference(
                 if gt.shape[-1] == 0:
                     gt = []
                 pred_notes = tokenizer.decode(pred_tokens)
-                breakpoint()
                 if not pred_notes.shape[-1] == 0:
                     pred_notes = pred_notes[pred_notes[:, 3] >= 0]
                 pred_notes = pred_notes.detach().cpu().numpy()
-                breakpoint()
                 pred_notes = np.unique(pred_notes, axis=0)
 
                 # Compute metrics
