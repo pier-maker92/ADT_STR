@@ -48,7 +48,7 @@ training:
   max_grad_norm: 1.0
   optim: "adamw_torch"
   lr_scheduler_type: "cosine"
-  # Con cosine: learning rate non scende sotto min_learning_rate (solo se impostato)
+  # Se min_learning_rate > 0: cosine da learning_rate a questo valore; all'ultimo step il LR è esattamente min_learning_rate (warmup invariato).
   min_learning_rate: null
 
 

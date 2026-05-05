@@ -79,6 +79,14 @@ class EvalDataset(Dataset):
         return DataLoader(self, batch_size=batch_size, shuffle=shuffle, collate_fn=collate_fn, num_workers=num_workers)
 
 
+def _normalize_splits(splits):
+    if splits is None:
+        return None
+    if isinstance(splits, int):
+        return [splits]
+    return list(splits)
+
+
 class ENSTDataset(EvalDataset):
     def __init__(self, config: ENSTDatasetConfig, tokenizer: MidiTokenizer):
         super().__init__(config, tokenizer)
@@ -156,8 +164,9 @@ class ENSTDataset(EvalDataset):
         }
         if config.minus_one:
             self.dataset = self.dataset.filter(self._filter_minus_one)
-        if config.splits is not None:
-            self.splits = config.splits
+        normalized_splits = _normalize_splits(config.splits)
+        if normalized_splits is not None:
+            self.splits = normalized_splits
             self.dataset = self.dataset.filter(self._filter_splits)
         self.drummers = config.drummers
         if self.drummers is not None:
@@ -211,8 +220,9 @@ class MDBDataset(EvalDataset):
                 "MusicDelta_Hendrix",
             ],
         }
-        if config.splits is not None:
-            self.splits = config.splits
+        normalized_splits = _normalize_splits(config.splits)
+        if normalized_splits is not None:
+            self.splits = normalized_splits
             self.dataset = self.dataset.filter(self._filter_splits)
         if config.demucs_separated:
             self.dataset = self.dataset.filter(self._filter_demucs_separated)
@@ -229,10 +239,11 @@ class MDBDataset(EvalDataset):
         return example["is_demucs_separated"] == False
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument("config", type=str)
-args = parser.parse_args()
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config", type=str)
+    args = parser.parse_args()
+
     config = load_config_from_yaml(args.config)
     tokenizer = MidiTokenizer(MidiTokenizerConfig(**config["tokenizer"]))
     config_plain = config["shared"]

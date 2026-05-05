@@ -76,29 +76,44 @@ class ENSTDrumConfig(MidiConfig):
     variation: str
 
 
-@dataclass
-class ADTModelConfig(SharedConfig):
-    enc_layers: int
-    dec_layers: int
-    nhead: int
-    d_query: int
-    dropout: float
-    tgt_vocab_size: int
-    enc_lr: float
-    dec_lr: float
-    plain: bool
-    n_mels: int
+from transformers import PretrainedConfig
+
+class ADTModelConfig(PretrainedConfig):
+    model_type = "adt_model"
+
+    def __init__(
+        self,
+        input_sec: float = 0.0,
+        time_res: float = 0.0,
+        win_length: int = 0,
+        sample_rate: int = 0,
+        enc_layers: int = 0,
+        dec_layers: int = 0,
+        nhead: int = 0,
+        d_query: int = 0,
+        dropout: float = 0.0,
+        tgt_vocab_size: int = 0,
+        enc_lr: float = 0.0,
+        dec_lr: float = 0.0,
+        plain: bool = False,
+        n_mels: int = 0,
+        **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.input_sec = input_sec
+        self.time_res = time_res
+        self.win_length = win_length
+        self.sample_rate = sample_rate
+        self.enc_layers = enc_layers
+        self.dec_layers = dec_layers
+        self.nhead = nhead
+        self.d_query = d_query
+        self.dropout = dropout
+        self.tgt_vocab_size = tgt_vocab_size
+        self.enc_lr = enc_lr
+        self.dec_lr = dec_lr
+        self.plain = plain
+        self.n_mels = n_mels
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
-            "enc_layers": self.enc_layers,
-            "dec_layers": self.dec_layers,
-            "nhead": self.nhead,
-            "d_query": self.d_query,
-            "dropout": self.dropout,
-            "tgt_vocab_size": self.tgt_vocab_size,
-            "enc_lr": self.enc_lr,
-            "dec_lr": self.dec_lr,
-            "plain": self.plain,
-            "n_mels": self.n_mels,
-        }
+        return super().to_dict()

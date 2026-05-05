@@ -1,14 +1,16 @@
 experiment:
   project_name: "adt-training"
-  run_name: "setting-1"
+  run_name: "setting-tau-0.4"
   use_wandb: true
 
 training:
   num_epochs: 1
-  learning_rate: 1e-4
+  learning_rate: 8e-4
+  min_learning_rate: 5e-5
   batch_size: 64
   mixed_precision: "bf16"
   max_dataloader_num_workers: 16
+
 
 logging:
   save_every_n_steps: 1000
@@ -19,12 +21,13 @@ logging:
 model:
   enc_layers: 4
   dec_layers: 4
-  d_query: 128 # please note that the attention dimension is d_query * nhead, so the total dimension is 768
+  d_query: 128
   nhead: 6
   dropout: 0.1
 
 checkpoint:
   max_checkpoints: 3
+  #resume_from_checkpoint: "/home/ec2-user/ADT_STR/outputs/setting-tau-0.6/checkpoint-18000"
 
 shared:
   input_sec: 2.56
@@ -49,7 +52,7 @@ tokenizer:
 
 synthetiser:
   oneshot_path: "/home/ec2-user/data/oneshot"
-  similarity_threshold: 0.8
+  similarity_threshold: 0.4
   max_hat_std_velocity: 0.15
   max_hat_mean_velocity: 0.1
   max_cymbals_std_velocity: 0.15
