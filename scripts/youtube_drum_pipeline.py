@@ -6,11 +6,11 @@ Requirements:
   - yt-dlp (+ ffmpeg) for YouTube download
   - demucs CLI (same usage as data_modules/demucs_seaprate.py)
   - model checkpoint
-  - pretty_midi (writes `predicted_drums.mid`; preview audio via lightweight synthesis or fluidsynth if available)
+  - pretty_midi (writes `predicted_drums.mid`; preview audio via one-shot-rendering WAVs + synthetic fallback)
 
 --synth-mapping only remaps pitches to GM / ADTOF before MIDI+audio (to match the tokenizer):
   adtof       -> ADTOF pitch clusters (ADTOF_mapping tokens)
-  gm_reduced  -> reduced GM pitches (recommended for GM drum map / fluidsynth)
+  gm_reduced  -> reduced GM pitches (recommended for one-shot drum map)
 
 Uses the same YAML merge as inference.py (config_default + experiment config).
 """
@@ -103,7 +103,9 @@ def _chunk_audio(
         end = min(start + chunk_samples, n)
         piece = wav[start:end].clone()
         if piece.numel() < chunk_samples:
-            pad = torch.zeros(chunk_samples - piece.numel(), dtype=piece.dtype, device=piece.device)
+            pad = torch.zeros(
+                chunk_samples - piece.numel(), dtype=piece.dtype, device=piece.device
+            )
             piece = torch.cat([piece, pad], dim=0)
         out.append((start, piece))
         start += hop_samples
@@ -144,14 +146,17 @@ def _run_model_on_chunks(
                 kwargs["beam_size"] = beam_size
             tokens_pred = sample_fn(**kwargs)
             pred_tokens = tokens_pred[0].cpu().numpy()
-            eos_idx = np.where((pred_tokens == tokenizer.EOS_token) | (pred_tokens == tokenizer.pad_token))[0]
+            eos_idx = np.where(
+                (pred_tokens == tokenizer.EOS_token)
+                | (pred_tokens == tokenizer.pad_token)
+            )[0]
             if len(eos_idx) > 0:
                 pred_tokens = pred_tokens[: int(eos_idx[0])]
 
             pred_notes = tokenizer.decode(pred_tokens)
             if pred_notes.numel() == 0:
                 continue
-            pred_notes = pred_notes[pred_notes[:, 3] >= 0]
+            # pred_notes = pred_notes[pred_notes[:, 3] >= 0]
             t0 = start_sample / float(sample_rate)
             for row in pred_notes:
                 onset = float(row[0]) + t0
@@ -188,7 +193,9 @@ def _remap_notes_for_synth(
             if p in mu.ADTOF_inverse_mapping:
                 out[i, 2] = float(mu.ADTOF_inverse_mapping[p][0])
     elif (not tokenizer_uses_adtof) and synth_uses_adtof:
-        new_p = [float(mu.ADTOF_map.get(int(p), int(p))) for p in out[:, 2].tolist()]
+        new_p = [
+            float(mu.ADTOF_mapping.get(int(p), int(p))) for p in out[:, 2].tolist()
+        ]
         out[:, 2] = torch.tensor(new_p, dtype=out.dtype)
     return out
 
@@ -200,7 +207,7 @@ def _filter_valid_synth_notes(notes: torch.Tensor) -> torch.Tensor:
     for row in notes:
         onset, offset, pitch, vel = row.tolist()
         p = int(pitch)
-        if 35 <= p <= 61 and offset >= onset:
+        if 35 <= p <= 60 and offset >= onset:
             rows.append([onset, offset, p, vel])
     if not rows:
         return torch.zeros((0, 4), dtype=torch.float32)
@@ -208,9 +215,18 @@ def _filter_valid_synth_notes(notes: torch.Tensor) -> torch.Tensor:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="YouTube / audio -> Demucs drums -> ADT -> drum preview")
-    p.add_argument("--url", type=str, default=None, help="YouTube URL (optional if --input-audio)")
-    p.add_argument("--input-audio", type=str, default=None, help="Skip download: use this audio file")
+    p = argparse.ArgumentParser(
+        description="YouTube / audio -> Demucs drums -> ADT -> drum preview"
+    )
+    p.add_argument(
+        "--url", type=str, default=None, help="YouTube URL (optional if --input-audio)"
+    )
+    p.add_argument(
+        "--input-audio",
+        type=str,
+        default=None,
+        help="Skip download: use this audio file",
+    )
     p.add_argument(
         "--config",
         type=str,
@@ -223,32 +239,32 @@ def parse_args() -> argparse.Namespace:
         default="checkpoints/setting-tau-0.4/model.safetensors",
         help="Override inference.checkpoint_path from the YAML",
     )
-    p.add_argument("--output-dir", type=str, default="youtube_pipeline_out", help="Output directory")
     p.add_argument(
-        "--synth-mapping",
+        "--output-dir",
         type=str,
-        choices=("adtof", "gm_reduced"),
-        default="gm_reduced",
-        help="Pitch remap for MIDI/preview: gm_reduced=standard GM (default); adtof=ADTOF clusters",
+        default="youtube_pipeline_out",
+        help="Output directory",
     )
     p.add_argument(
-        "--soundfont",
-        type=str,
-        default=None,
-        help=(
-            "Path to a GM .sf2 for pyfluidsynth (needs: pip install pyfluidsynth; system fluid-synth). "
-            "Suggested banks: GeneralUser-GS, Matrix SoundFont, FluidR3_GM — see utils/drum_audio_render.py "
-            "module docstring for download URLs. If omitted, procedural preview is used."
-        ),
+        "--ADTOF_mapping",
+        action="store_true",
+        help="Use ADTOF pitch clusters in the tokenizer. Overwrites YAML config.",
     )
-    p.add_argument("--demucs-model", type=str, default="htdemucs", help="Demucs model name (-n)")
+    p.add_argument(
+        "--demucs-model", type=str, default="htdemucs", help="Demucs model name (-n)"
+    )
     p.add_argument(
         "--skip-demucs",
         action="store_true",
         help="Skip Demucs (use --input-audio or the downloaded mix as drums)",
     )
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--stem-name", type=str, default="youtube_track", help="Intermediate filename stem for Demucs")
+    p.add_argument(
+        "--stem-name",
+        type=str,
+        default="youtube_track",
+        help="Intermediate filename stem for Demucs",
+    )
     p.add_argument(
         "--max-decode-tokens",
         type=int,
@@ -271,7 +287,9 @@ def main() -> None:
     np.random.seed(args.seed)
 
     default_cfg_path = ROOT / "configs" / "config_default.yaml"
-    merged = deep_merge_dicts(load_config_from_yaml(str(default_cfg_path)), load_config_from_yaml(args.config))
+    merged = deep_merge_dicts(
+        load_config_from_yaml(str(default_cfg_path)), load_config_from_yaml(args.config)
+    )
     _ensure_training_lr(merged)
 
     if args.checkpoint_path:
@@ -280,7 +298,12 @@ def main() -> None:
     inf = merged.get("inference", {})
     checkpoint_path = inf.get("checkpoint_path")
     if not checkpoint_path:
-        raise SystemExit("Missing checkpoint_path: set it in the YAML or use --checkpoint-path")
+        raise SystemExit(
+            "Missing checkpoint_path: set it in the YAML or use --checkpoint-path"
+        )
+
+    # Force ADTOF mapping choice from CLI
+    merged.setdefault("tokenizer", {})["ADTOF_mapping"] = args.ADTOF_mapping
 
     shared = merged.get("shared", {})
     sample_rate = int(shared["sample_rate"])
@@ -310,7 +333,9 @@ def main() -> None:
     else:
         demucs_out = work / "demucs"
         stem = Path(dl_path).stem
-        separate_drums([str(dl_path)], output_dir=str(demucs_out), model=args.demucs_model)
+        separate_drums(
+            [str(dl_path)], output_dir=str(demucs_out), model=args.demucs_model
+        )
         drums_wav = demucs_out / f"{stem}_drums.wav"
         if not drums_wav.is_file():
             raise FileNotFoundError(
@@ -337,7 +362,9 @@ def main() -> None:
     log.info("max_length (decode) per chunk: %d", max_decode)
 
     wav = _load_mono_wav(drums_wav, sample_rate)
-    torchaudio.save(str(out_dir / "input_drums_resampled.wav"), wav.unsqueeze(0), sample_rate)
+    torchaudio.save(
+        str(out_dir / "input_drums_resampled.wav"), wav.unsqueeze(0), sample_rate
+    )
 
     log.info("Chunked inference (input_sec=%.3f, sr=%d)", input_sec, sample_rate)
     notes = _run_model_on_chunks(
@@ -353,9 +380,11 @@ def main() -> None:
     )
     np.save(str(out_dir / "predicted_notes.npy"), notes.numpy())
 
-    synth_adtof = args.synth_mapping == "adtof"
+    # We always want the synth/MIDI to be in GM space for rendering
     mu = MappingUtils()
-    notes_synth = _remap_notes_for_synth(notes, tokenizer_uses_adtof, synth_adtof, mu)
+    notes_synth = _remap_notes_for_synth(
+        notes, tokenizer_uses_adtof=tokenizer_uses_adtof, synth_uses_adtof=False, mu=mu
+    )
     notes_synth = _filter_valid_synth_notes(notes_synth)
     log.info("Notes after validity filter: %d", notes_synth.shape[0])
     if notes_synth.numel() == 0:
@@ -368,8 +397,7 @@ def main() -> None:
         n_audio,
         sample_rate,
         midi_path=midi_path,
-        soundfont_path=args.soundfont,
-        seed=args.seed,
+        apply_mapping=False,
     )
     log.info("Drum preview (%s): MIDI %s", render_mode, midi_path)
 
@@ -380,3 +408,10 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# python scripts/youtube_drum_pipeline.py \
+# --url "https://www.youtube.com/watch?v=0CFuCYNx-1g&list=RD0CFuCYNx-1g&start_radio=1" \
+# --config configs/eval/ENSTinference.yaml \
+# --checkpoint-path checkpoints/setting-tau-0.4/model.safetensors \
+# --output-dir youtube_pipeline_out \
+# --synth-mapping gm_reduced

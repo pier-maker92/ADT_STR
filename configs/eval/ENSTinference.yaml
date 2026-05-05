@@ -26,7 +26,7 @@ EvalDatasetConfig:
   drummers: null
   dataset_name: "ENST"
   minus_one: true
-  splits: [2]
+  splits: null
 
 inference:
   checkpoint_path: "checkpoints/setting-tau-0.8"

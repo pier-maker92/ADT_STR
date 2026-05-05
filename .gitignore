@@ -17,6 +17,7 @@ wandb/
 *.json
 
 # Debug logs and traces
+*./
 *.debug
 debug.log
 **/debug.log
@@ -31,3 +32,10 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+personal/
+youtube_pipeline_out/
+scripts/
+data/
+checkpoints/
+out_yt/

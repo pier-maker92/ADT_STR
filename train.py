@@ -21,7 +21,13 @@ from utils.utils import create_mask_plain
 from modules.synthetiser import SynthDrum, SynthDrumConfig
 from modules.midi_tokenizer import MidiTokenizer, MidiTokenizerConfig
 from utils.config_utils import load_config_from_yaml, deep_merge_dicts
-from data_modules.train_dataset import LakhDataset, collate_fn, LakhDatasetConfig, TMIDTDataset, TMIDTDatasetConfig
+from data_modules.train_dataset import (
+    LakhDataset,
+    collate_fn,
+    LakhDatasetConfig,
+    TMIDTDataset,
+    TMIDTDatasetConfig,
+)
 
 
 class ADTTrainer(Trainer):
@@ -55,7 +61,13 @@ class ADTTrainer(Trainer):
         _, tgt_padding_mask = create_mask_plain(tgt_seq_len, token_lengths, device)
 
         # Forward pass
-        loss = model(src=wavs, tgt=tgt_input, tgt_mask=None, tgt_padding_mask=tgt_padding_mask, labels=labels)
+        loss = model(
+            src=wavs,
+            tgt=tgt_input,
+            tgt_mask=None,
+            tgt_padding_mask=tgt_padding_mask,
+            labels=labels,
+        )
 
         # Clean up tensors to save memory
         del tokens, wavs, token_lengths, tgt_input, labels, tgt_padding_mask
@@ -90,16 +102,33 @@ class ADTTrainer(Trainer):
                 tgt_input = tokens[:, :-1]
                 labels = tokens[:, 1:]
                 tgt_seq_len = tgt_input.size(1)
-                _, tgt_padding_mask = create_mask_plain(tgt_seq_len, token_lengths, device)
+                _, tgt_padding_mask = create_mask_plain(
+                    tgt_seq_len, token_lengths, device
+                )
 
                 # Forward pass
-                loss = model(src=wavs, tgt=tgt_input, tgt_mask=None, tgt_padding_mask=tgt_padding_mask, labels=labels)
+                loss = model(
+                    src=wavs,
+                    tgt=tgt_input,
+                    tgt_mask=None,
+                    tgt_padding_mask=tgt_padding_mask,
+                    labels=labels,
+                )
 
                 total_loss += loss.item()
                 num_batches += 1
 
                 # Clean up tensors
-                del tokens, wavs, token_lengths, wav_lengths, tgt_input, labels, tgt_padding_mask, loss
+                del (
+                    tokens,
+                    wavs,
+                    token_lengths,
+                    wav_lengths,
+                    tgt_input,
+                    labels,
+                    tgt_padding_mask,
+                    loss,
+                )
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
@@ -125,17 +154,8 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
 
 def create_model(config: ADTModelConfig, device: torch.device) -> ADTModel:
     """Create and initialize the ADT model."""
-    # Create spectrogram computation module
-    compute_spectrogram = ComputeMelSpectrogram(
-        sample_rate=config.sample_rate,
-        win_length=config.win_length,
-        time_res=config.time_res,
-        n_mels=config.n_mels,
-        device=device,
-    )
-
-    # Create the main model
-    model = ADTModel(config=config, compute_spectrogram=compute_spectrogram)
+    # Create the main model directly using HF PreTrainedModel config
+    model = ADTModel(config=config)
 
     return model
 
@@ -212,7 +232,9 @@ def create_training_arguments(config: Dict[str, Any]) -> TrainingArguments:
         save_total_limit=checkpoint_cfg.get("max_checkpoints"),
         fp16=training_cfg.get("mixed_precision") == "fp16",
         bf16=training_cfg.get("mixed_precision") == "bf16",
-        dataloader_num_workers=min(os.cpu_count(), training_cfg.get("max_dataloader_num_workers")),
+        dataloader_num_workers=min(
+            os.cpu_count(), training_cfg.get("max_dataloader_num_workers")
+        ),
         dataloader_pin_memory=True,
         gradient_accumulation_steps=training_cfg.get("gradient_accumulation_steps"),
         gradient_checkpointing=False,
@@ -251,7 +273,9 @@ def train(config: Dict[str, Any]):
 
     if config_dataset["dataset_name"] == "Lakh":
         config_synthetiser = config.get("synthetiser", None)
-        assert config_synthetiser is not None, "Synthetiser is required for Lakh dataset"
+        assert (
+            config_synthetiser is not None
+        ), "Synthetiser is required for Lakh dataset"
         config_synthetiser["ADTOF_mapping"] = config_tokenizer["ADTOF_mapping"]
         config_synthetiser.update(config["shared"])
         synthetiser = SynthDrum(SynthDrumConfig(**config_synthetiser))
@@ -260,7 +284,9 @@ def train(config: Dict[str, Any]):
     # load modules
     tokenizer = MidiTokenizer(MidiTokenizerConfig(**config_tokenizer))
     if config_dataset["dataset_name"] == "Lakh":
-        dataset = LakhDataset(LakhDatasetConfig(**config_dataset), tokenizer, synthetiser)
+        dataset = LakhDataset(
+            LakhDatasetConfig(**config_dataset), tokenizer, synthetiser
+        )
     elif config_dataset["dataset_name"] == "TMIDT":
         dataset = TMIDTDataset(TMIDTDatasetConfig(**config_dataset), tokenizer)
     else:

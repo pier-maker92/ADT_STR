@@ -68,6 +68,12 @@ def separate_drums(files, output_dir="demucs_output", model="htdemucs"):
         else:
             print(f"Warning: Drums not found for {file_path}")
 
+        nodrum_path = output_dir / model / song_name / "no_drums.wav"
+        final_nodrum_path = output_dir / f"{song_name}_no_drums.wav"
+        if nodrum_path.exists():
+            nodrum_path.rename(final_nodrum_path)
+            print(f"Saved no_drums: {final_nodrum_path}")
+
 # Example usage
 if __name__ == "__main__":
     all_files = glob("path/to/your/audio/files/*.wav", recursive=True)

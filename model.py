@@ -5,8 +5,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from config import ADTModelConfig
+from transformers import PreTrainedModel
 import torchaudio.transforms as T
 from utils.utils import create_mask_plain
+
 
 class TokenEmbedding(nn.Module):
     def __init__(self, vocab_size, emb_size):
@@ -30,10 +32,13 @@ class TokenEmbedding(nn.Module):
         embedding_weights = self.embedding.weight  # Get weights
 
         # Multiply one-hot or multi-hot vector with embedding weights
-        embeddings = torch.matmul(token_vector, embedding_weights) * math.sqrt(self.emb_size)
-        
+        embeddings = torch.matmul(token_vector, embedding_weights) * math.sqrt(
+            self.emb_size
+        )
+
         return embeddings
-    
+
+
 class TokenEmbedding_plain(nn.Module):
     def __init__(self, vocab_size, emb_size):
         super(TokenEmbedding_plain, self).__init__()
@@ -43,27 +48,26 @@ class TokenEmbedding_plain(nn.Module):
     def forward(self, tokens: torch.Tensor):
         return self.embedding(tokens.long()) * math.sqrt(self.emb_size)
 
+
 class PositionalEncoding(nn.Module):
-    def __init__(self,
-                 emb_size: int,
-                 maxlen: int = 2048):
+    def __init__(self, emb_size: int, maxlen: int = 2048):
         super(PositionalEncoding, self).__init__()
-        den = torch.exp(- torch.arange(0, emb_size, 2)* math.log(10000) / emb_size)
+        den = torch.exp(-torch.arange(0, emb_size, 2) * math.log(10000) / emb_size)
         pos = torch.arange(0, maxlen).reshape(maxlen, 1)
         pos_embedding = torch.zeros((maxlen, emb_size))
         pos_embedding[:, 0::2] = torch.sin(pos * den)
         pos_embedding[:, 1::2] = torch.cos(pos * den)
         pos_embedding = pos_embedding.unsqueeze(0)
 
-        self.register_buffer('pos_embedding', pos_embedding)
+        self.register_buffer("pos_embedding", pos_embedding)
 
     def forward(self, token_embedding: torch.Tensor):
-        return token_embedding + self.pos_embedding[:, :token_embedding.size(1), :]
+        return token_embedding + self.pos_embedding[:, : token_embedding.size(1), :]
+
 
 class ComputeMelSpectrogram(torch.nn.Module):
-    def __init__(self, sample_rate, win_length, time_res, n_mels, device):
+    def __init__(self, sample_rate, win_length, time_res, n_mels):
         super(ComputeMelSpectrogram, self).__init__()
-        self.device = device
         self.compute_spec = T.MelSpectrogram(
             sample_rate=sample_rate,
             n_fft=win_length,
@@ -71,13 +75,16 @@ class ComputeMelSpectrogram(torch.nn.Module):
             n_mels=n_mels,
             f_min=20.0,
             power=2,
-        ).to(device)
+        )
         self.window_pad_idxs = int((win_length / 2) // int(time_res * sample_rate) + 1)
 
     def forward(self, wave):
-        wave = wave.to(self.device)
+        wave_device = wave.device
+        self.compute_spec = self.compute_spec.to(wave_device)
         # Esegui in float32: torchaudio MelSpectrogram + bf16 autocast causano CUBLAS_STATUS_INVALID_VALUE
-        with torch.amp.autocast(device_type="cuda", enabled=False):
+        with torch.amp.autocast(
+            device_type="cuda" if wave_device.type == "cuda" else "cpu", enabled=False
+        ):
             wave_f32 = wave.float()
             mel_spec = self.compute_spec(wave_f32)
 
@@ -103,7 +110,9 @@ class Encoder(nn.Module):
         self.num_features = d_query * nhead
         self.dense_layer = nn.Linear(self.num_features, self.num_features, bias=False)
         self.positional_encoding = PositionalEncoding(self.num_features)
-        self.layer_norm = nn.LayerNorm(normalized_shape=self.num_features, elementwise_affine=True)
+        self.layer_norm = nn.LayerNorm(
+            normalized_shape=self.num_features, elementwise_affine=True
+        )
         self.dropout_layer = nn.Dropout(p=dropout)
 
         layer = nn.TransformerEncoderLayer(
@@ -127,7 +136,16 @@ class Encoder(nn.Module):
 
 
 class Decoder(nn.Module):
-    def __init__(self, dec_layers, d_query, nhead, ffn_hid_dim, tgt_vocab_size, dropout, plain=False):
+    def __init__(
+        self,
+        dec_layers,
+        d_query,
+        nhead,
+        ffn_hid_dim,
+        tgt_vocab_size,
+        dropout,
+        plain=False,
+    ):
         super(Decoder, self).__init__()
         self.num_features = d_query * nhead
         if plain:
@@ -154,9 +172,13 @@ class Decoder(nn.Module):
         tgt_emb = self.dropout_layer(tgt_emb)
         # bf16-safe and PyTorch same-type: use additive float masks (0 / -1e4) instead of bool (-inf)
         if tgt_mask is not None:
-            tgt_mask = torch.zeros_like(tgt_mask, dtype=tgt_emb.dtype, device=tgt_mask.device).masked_fill_(tgt_mask, -1e4)
+            tgt_mask = torch.zeros_like(
+                tgt_mask, dtype=tgt_emb.dtype, device=tgt_mask.device
+            ).masked_fill_(tgt_mask, -1e4)
         if tgt_padding_mask is not None and tgt_padding_mask.dtype == torch.bool:
-            tgt_padding_mask = torch.zeros_like(tgt_padding_mask, dtype=tgt_emb.dtype, device=tgt_padding_mask.device).masked_fill_(tgt_padding_mask, -1e4)
+            tgt_padding_mask = torch.zeros_like(
+                tgt_padding_mask, dtype=tgt_emb.dtype, device=tgt_padding_mask.device
+            ).masked_fill_(tgt_padding_mask, -1e4)
         decoder_outputs = self.decoder(
             tgt_emb,
             encoder_output,
@@ -168,13 +190,14 @@ class Decoder(nn.Module):
         return self.generator(decoder_outputs)
 
 
-class ADTModel(nn.Module):
+class ADTModel(PreTrainedModel):
+    config_class = ADTModelConfig
+
     def __init__(
         self,
         config: ADTModelConfig,
-        compute_spectrogram: ComputeMelSpectrogram,
     ) -> None:
-        super(ADTModel, self).__init__()
+        super(ADTModel, self).__init__(config)
         self.config = config
         self.encoder = Encoder(
             enc_layers=config.enc_layers,
@@ -192,10 +215,19 @@ class ADTModel(nn.Module):
             tgt_vocab_size=config.tgt_vocab_size,
             plain=config.plain,
         )
-        self.compute_spectrogram = compute_spectrogram
-        self.project_to_mel = nn.Linear(config.n_mels, int(config.d_query * config.nhead))
+        self.compute_spectrogram = ComputeMelSpectrogram(
+            sample_rate=config.sample_rate,
+            win_length=config.win_length,
+            time_res=config.time_res,
+            n_mels=config.n_mels,
+        )
+        self.project_to_mel = nn.Linear(
+            config.n_mels, int(config.d_query * config.nhead)
+        )
 
-    def _loss_fn(self, logits: torch.FloatTensor, tgt: torch.LongTensor) -> torch.FloatTensor:
+    def _loss_fn(
+        self, logits: torch.FloatTensor, tgt: torch.LongTensor
+    ) -> torch.FloatTensor:
         # Use fp32 for stable loss and ignore PAD token (id=1)
         logits = logits.float()
         logits = torch.nan_to_num(logits, nan=0.0, posinf=1e4, neginf=-1e4)
@@ -260,7 +292,9 @@ class ADTModel(nn.Module):
         memory = self.encoder(src_emb)
 
         # Initialize with start token
-        generated = torch.full((batch_size, 1), start_token, dtype=torch.long, device=device)
+        generated = torch.full(
+            (batch_size, 1), start_token, dtype=torch.long, device=device
+        )
         finished = torch.zeros(batch_size, dtype=torch.bool, device=device)
         # Greedy decoding loop (per-row finished mask so batch items can end at different steps)
         for step in range(max_length - 1):
@@ -279,7 +313,9 @@ class ADTModel(nn.Module):
             # Get next token (greedy); freeze finished rows at EOS so they do not keep consuming argmax noise
             next_token_logits = logits[:, -1, :]  # Last position
             next_token = torch.argmax(next_token_logits, dim=-1)  # Greedy selection
-            next_token = torch.where(finished, torch.full_like(next_token, end_token), next_token)
+            next_token = torch.where(
+                finished, torch.full_like(next_token, end_token), next_token
+            )
             generated = torch.cat([generated, next_token.unsqueeze(1)], dim=1)
             finished = finished | (next_token == end_token)
             if torch.all(finished):
@@ -332,7 +368,9 @@ class ADTModel(nn.Module):
 
         for batch_idx in range(batch_size):
             # Initialize beams for this batch item
-            initial_sequence = torch.full((1, 1), start_token, dtype=torch.long, device=device)
+            initial_sequence = torch.full(
+                (1, 1), start_token, dtype=torch.long, device=device
+            )
             beams = [{"sequence": initial_sequence, "log_prob": 0.0, "finished": False}]
             all_beams.append(beams)
 
@@ -356,12 +394,18 @@ class ADTModel(nn.Module):
                     continue
 
                 # Stack sequences for parallel processing
-                sequences = torch.cat([beam["sequence"] for beam in active_beams], dim=0)
-                batch_memory = memory[batch_idx : batch_idx + 1].expand(len(active_beams), -1, -1)
+                sequences = torch.cat(
+                    [beam["sequence"] for beam in active_beams], dim=0
+                )
+                batch_memory = memory[batch_idx : batch_idx + 1].expand(
+                    len(active_beams), -1, -1
+                )
 
                 # Create causal mask
                 seq_len = sequences.shape[1]
-                tgt_mask = torch.triu(torch.ones(seq_len, seq_len, device=device), diagonal=1).bool()
+                tgt_mask = torch.triu(
+                    torch.ones(seq_len, seq_len, device=device), diagonal=1
+                ).bool()
 
                 # Get decoder output
                 logits = self.decoder(
@@ -379,7 +423,9 @@ class ADTModel(nn.Module):
                 candidates = []
                 for beam_idx, beam in enumerate(active_beams):
                     beam_log_probs = log_probs[beam_idx]
-                    top_k_log_probs, top_k_tokens = torch.topk(beam_log_probs, beam_size)
+                    top_k_log_probs, top_k_tokens = torch.topk(
+                        beam_log_probs, beam_size
+                    )
 
                     for k in range(beam_size):
                         token = top_k_tokens[k].item()
@@ -387,19 +433,30 @@ class ADTModel(nn.Module):
                         new_log_prob = beam["log_prob"] + token_log_prob
 
                         # Create new sequence
-                        new_sequence = torch.cat([beam["sequence"], torch.tensor([[token]], device=device)], dim=1)
+                        new_sequence = torch.cat(
+                            [beam["sequence"], torch.tensor([[token]], device=device)],
+                            dim=1,
+                        )
 
                         # Check if finished
                         finished = token == end_token
 
-                        candidates.append({"sequence": new_sequence, "log_prob": new_log_prob, "finished": finished})
+                        candidates.append(
+                            {
+                                "sequence": new_sequence,
+                                "log_prob": new_log_prob,
+                                "finished": finished,
+                            }
+                        )
 
                 # Add finished beams (they don't expand further)
                 finished_beams = [beam for beam in beams if beam["finished"]]
                 candidates.extend(finished_beams)
 
                 # Select top beam_size candidates
-                candidates.sort(key=lambda x: self._score_sequence(x, length_penalty), reverse=True)
+                candidates.sort(
+                    key=lambda x: self._score_sequence(x, length_penalty), reverse=True
+                )
                 new_beams = candidates[:beam_size]
 
                 new_all_beams.append(new_beams)
@@ -407,7 +464,9 @@ class ADTModel(nn.Module):
             all_beams = new_all_beams
 
             # Check if all beams in all batches are finished
-            all_finished = all(all(beam["finished"] for beam in beams) for beams in all_beams)
+            all_finished = all(
+                all(beam["finished"] for beam in beams) for beams in all_beams
+            )
             if all_finished:
                 break
 
@@ -416,7 +475,9 @@ class ADTModel(nn.Module):
         for batch_idx in range(batch_size):
             beams = all_beams[batch_idx]
             # Sort by score and take the best
-            beams.sort(key=lambda x: self._score_sequence(x, length_penalty), reverse=True)
+            beams.sort(
+                key=lambda x: self._score_sequence(x, length_penalty), reverse=True
+            )
             best_sequence = beams[0]["sequence"]
             results.append(best_sequence)
 
@@ -425,7 +486,12 @@ class ADTModel(nn.Module):
         padded_results = []
         for seq in results:
             if seq.shape[1] < max_len:
-                padding = torch.full((1, max_len - seq.shape[1]), end_token, dtype=torch.long, device=device)
+                padding = torch.full(
+                    (1, max_len - seq.shape[1]),
+                    end_token,
+                    dtype=torch.long,
+                    device=device,
+                )
                 padded_seq = torch.cat([seq, padding], dim=1)
             else:
                 padded_seq = seq

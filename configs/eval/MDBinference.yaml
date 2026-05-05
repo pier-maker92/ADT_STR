@@ -22,7 +22,7 @@ EvalDatasetConfig:
   dataset_path: "data/MDB/data@24000/0000.parquet"
   dataset_name: "MDB"
   demucs_separated: false
-  splits: [2]
+  splits: null
 
 
 inference:
