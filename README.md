@@ -13,6 +13,9 @@ The repository provides:
 - Training scripts based on Hugging Face `Trainer`.
 - Evaluation utilities for drum transcription benchmarks.
 
+Supplementary material is available at
+[2026 ADT supplementary material](https://devsupplementary.github.io/2026ADTsupplementaryMaterial/).
+
 Available local checkpoints:
 
 | Checkpoint | Weight file | Configuration |
@@ -27,10 +30,14 @@ needed for inference. The default audio configuration uses 24 kHz audio and
 
 ## Results
 
-The figure below reports aggregate F1 scores on ENST and MDB across drum
-instrument groups.
+The figure below reports F1 scores on ENST and MDB across the full drum
+instrument vocabulary.
 
-![Aggregate transcription results](results/mir_eval/aggregate_metrics_bars.png)
+![F1 scores across the full drum vocabulary](assets/f1_scores_bars_full_vocab.png)
+
+Evaluations were computed with the
+[mir_eval](https://mir-eval.readthedocs.io/latest/) package using a 50 ms
+tolerance window.
 
 The tau checkpoints correspond to different training settings:
 
