@@ -1,5 +1,7 @@
 # ADT_STR
 
+Version: `v1.0.0`
+
 ## Overview
 
 ADT_STR is an automatic drum transcription model. Given an input audio file, the
@@ -204,3 +206,12 @@ The checkpoint can then be used directly with:
 ```bash
 python inference --checkpoint <checkpoint-name> --input path/to/audio.wav
 ```
+
+## Versioning
+
+This repository uses semantic versioning. The current release is `v1.0.0`.
+
+## License
+
+This work is licensed under the
+[Creative Commons Attribution-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-sa/4.0/).
