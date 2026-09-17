@@ -36,7 +36,7 @@ if str(ROOT) not in sys.path:
 
 from config import ADTModelConfig
 from data_modules.demucs_seaprate import separate_drums
-from inference import load_model
+from eval import load_model
 from model import ADTModel
 from modules.midi_tokenizer import MidiTokenizer, MidiTokenizerConfig
 from utils.audio_utils import load_and_resample, normalize

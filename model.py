@@ -68,14 +68,15 @@ class PositionalEncoding(nn.Module):
 class ComputeMelSpectrogram(torch.nn.Module):
     def __init__(self, sample_rate, win_length, time_res, n_mels):
         super(ComputeMelSpectrogram, self).__init__()
-        self.compute_spec = T.MelSpectrogram(
-            sample_rate=sample_rate,
-            n_fft=win_length,
-            hop_length=int(time_res * sample_rate),
-            n_mels=n_mels,
-            f_min=20.0,
-            power=2,
-        )
+        with torch.device("cpu"):
+            self.compute_spec = T.MelSpectrogram(
+                sample_rate=sample_rate,
+                n_fft=win_length,
+                hop_length=int(time_res * sample_rate),
+                n_mels=n_mels,
+                f_min=20.0,
+                power=2,
+            )
         self.window_pad_idxs = int((win_length / 2) // int(time_res * sample_rate) + 1)
 
     def forward(self, wave):
@@ -192,6 +193,9 @@ class Decoder(nn.Module):
 
 class ADTModel(PreTrainedModel):
     config_class = ADTModelConfig
+    _supports_assign_param_buffer = False
+    _tied_weights_keys = []
+    all_tied_weights_keys = {}
 
     def __init__(
         self,

@@ -1,0 +1,25 @@
+model:
+  enc_layers: 4
+  dec_layers: 4
+  d_query: 128
+  nhead: 6
+  dropout: 0.1
+
+shared:
+  input_sec: 2.56
+  time_res: 0.01
+  win_length: 2048
+  sample_rate: 24000
+
+tokenizer:
+  ADTOF_mapping: false
+  BOS_token: 2
+  EOS_token: 3
+  pad_token: 1
+  silence_token: 0
+  add_velocity: true
+
+inference:
+  checkpoint_path: "checkpoints/setting-tau-0.8"
+  max_length: 64
+  batch_size: 8

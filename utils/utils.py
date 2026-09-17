@@ -71,21 +71,21 @@ def create_bool_matrix(lengths, max_len=None, mask_prob=0.0):
     Returns:
         bool_matrix: PyTorch boolean mask of shape (N, max_len)
     """
-    # list を Tensor に変換
+    # Convert the input list to a tensor.
     if isinstance(lengths, list):
         lengths = torch.tensor(lengths, dtype=torch.int64)
 
     max_len = max_len or lengths.max()
     batch_size = lengths.size(0)
 
-    with torch.no_grad():  # 勾配を記録せずにメモリ効率よく計算
+    with torch.no_grad():  # Avoid gradient tracking for a cheaper mask computation.
         indices = torch.arange(max_len, device=lengths.device)
-        bool_matrix = (indices.view(1, -1) < lengths.view(-1, 1))  # 通常のマスク
+        bool_matrix = (indices.view(1, -1) < lengths.view(-1, 1))  # Standard length mask.
 
-        # 5k+3 の位置のトークン(inst_token)を特定
+        # Identify instrument-token positions (every 5k+3 slot).
         mask_positions = (indices % 5 == 3).view(1, -1)
 
-        # 5k+3 の位置を mask_prob の確率でマスク
+        # Randomly mask instrument-token positions with probability mask_prob.
         random_mask = torch.bernoulli(torch.full(
             (batch_size, max_len), mask_prob, dtype=torch.float32, device=lengths.device
         )).bool()
@@ -215,7 +215,7 @@ def my_vstack(array1, array2):
         return np.vstack((array1, array2))
 
 
-def get_random_mode(lst):  # リストから最頻値を取得（重複がある場合はそこからランダム）
+def get_random_mode(lst):  # Return a mode, breaking ties uniformly at random.
     counter = Counter(lst)
     max_count = max(counter.values())
     modes = [key for key, count in counter.items() if count == max_count]

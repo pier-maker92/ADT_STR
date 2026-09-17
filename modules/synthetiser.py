@@ -205,9 +205,9 @@ class SynthDrum:
         if velocity == 0:
             return 0
         velocity = torch.clamp(torch.tensor(velocity), 0, 127)
-        # 正規化（0〜127を0〜1に変換）
+        # Normalize velocity from MIDI range [0, 127] to [0, 1].
         normalized_velocity = velocity / 127.0
-        # 指数関数でマッピング
+        # Use an exponential mapping for amplitude scaling.
         volume = min_volume + (max_volume - min_volume) * (base**normalized_velocity - 1) / (base - 1)
         return volume
 
@@ -217,24 +217,24 @@ class SynthDrum:
         mixup = random.uniform(0, self.config.mixup_range)
         oneshot, sub_oneshot = pad_sequence(
             [torch.tensor(oneshot), torch.tensor(sub_oneshot)], batch_first=True
-        )  # ワンショットの長さを比較して長い方に合わせるようにパディング
+        )  # Pad to match the longer one-shot before mixing.
 
-        vol = self._vel_to_vol(velocity)  # ベロシティから音量(振幅)を計算
+        vol = self._vel_to_vol(velocity)  # Convert velocity to amplitude.
         oneshot = oneshot * (1 - mixup) + mixup * sub_oneshot
         # normalize oneshot
         oneshot = oneshot / oneshot.abs().max()
         # multiply vol
         oneshot = oneshot * vol
 
-        note_start = int((onset) * self.sample_rate)  # 開始時刻を計算
-        shot_len = len(oneshot)  # ワンショット全体をレンダリング
+        note_start = int((onset) * self.sample_rate)  # Compute onset sample index.
+        shot_len = len(oneshot)  # Render the full one-shot by default.
 
-        if note_start + shot_len > len(wav_seg):  # もしワンショットの終了時刻ががオーディオ全体の長さを超える場合
-            oneshot = oneshot[: len(wav_seg) - note_start]  # オーディオの最後に時刻までにワンショットの長さを調整
-            wav_seg[note_start:] += oneshot  # レンダリング
+        if note_start + shot_len > len(wav_seg):  # Trim if the one-shot would exceed the output length.
+            oneshot = oneshot[: len(wav_seg) - note_start]  # Keep only the portion that fits.
+            wav_seg[note_start:] += oneshot  # Mix the trimmed one-shot.
 
-        else:  # 超えない場合
-            wav_seg[note_start : note_start + shot_len] += oneshot  # 普通にレンダリング
+        else:  # Otherwise, mix the one-shot as-is.
+            wav_seg[note_start : note_start + shot_len] += oneshot  # Standard render path.
 
         return wav_seg
 

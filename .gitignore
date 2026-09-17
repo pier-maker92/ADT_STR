@@ -39,3 +39,8 @@ scripts/
 data/
 checkpoints/
 out_yt/
+*.mid
+*.mp3
+hf_export/
+outputs/
+hf_export_smoke/

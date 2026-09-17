@@ -1,0 +1,35 @@
+[project]
+name = "adt-str"
+version = "0.1.0"
+description = "Automatic Drum Transcription model inference and utilities"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "datasets",
+    "h5py",
+    "huggingface-hub",
+    "joblib",
+    "matplotlib",
+    "mir_eval",
+    "numpy",
+    "omegaconf",
+    "pandas",
+    "pedalboard",
+    "pretty_midi",
+    "safetensors",
+    "soundfile>=0.12.1",
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "torchcodec>=0.7,<0.8",
+    "tqdm",
+    "transformers[torch]",
+    "wandb",
+]
+
+[project.optional-dependencies]
+demucs = [
+    "demucs",
+]
+
+[tool.uv]
+package = false
