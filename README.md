@@ -50,6 +50,17 @@ The tau checkpoints correspond to different training settings:
 In the reported aggregate scores, `setting-tau-0.8` gives the strongest overall
 performance on both ENST and MDB.
 
+### Confusion matrices
+
+The confusion matrices below report class-level transcription behavior for each
+tau checkpoint on ENST and MDB.
+
+| Checkpoint | ENST | MDB |
+| --- | --- | --- |
+| `setting-tau-0.4` | ![ENST confusion matrix for tau 0.4](assets/confusion_matrix_ENST_tau_0.4.png) | ![MDB confusion matrix for tau 0.4](assets/confusion_matrix_MDB_tau_0.4.png) |
+| `setting-tau-0.6` | ![ENST confusion matrix for tau 0.6](assets/confusion_matrix_ENST_tau_0.6.png) | ![MDB confusion matrix for tau 0.6](assets/confusion_matrix_MDB_tau_0.6.png) |
+| `setting-tau-0.8` | ![ENST confusion matrix for tau 0.8](assets/confusion_matrix_ENST_tau_0.8.png) | ![MDB confusion matrix for tau 0.8](assets/confusion_matrix_MDB_tau_0.8.png) |
+
 ## Install
 
 This project is configured with `pyproject.toml` and can be installed with
