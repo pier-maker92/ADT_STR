@@ -1,5 +1,8 @@
 # ADT_STR
 
+- [Demo page](https://devsupplementary.github.io/2026ADTsupplementaryMaterial/)
+- [Curated seed sample](https://drive.google.com/file/d/1mRiFN8aKFEkKtPxThJrTTjrWm0ZY8-OG/view?usp=sharing)
+
 Version: `v1.0.0`
 
 ## Overview
@@ -14,9 +17,6 @@ The repository provides:
 - Checkpoint-based inference with per-checkpoint JSON configuration.
 - Training scripts based on Hugging Face `Trainer`.
 - Evaluation utilities for drum transcription benchmarks.
-
-Supplementary material is available at the
-[demo page](https://devsupplementary.github.io/2026ADTsupplementaryMaterial/).
 
 Available local checkpoints:
 
