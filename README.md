@@ -15,8 +15,8 @@ The repository provides:
 - Training scripts based on Hugging Face `Trainer`.
 - Evaluation utilities for drum transcription benchmarks.
 
-Supplementary material is available at
-[2026 ADT supplementary material](https://devsupplementary.github.io/2026ADTsupplementaryMaterial/).
+Supplementary material is available at the
+[demo page](https://devsupplementary.github.io/2026ADTsupplementaryMaterial/).
 
 Available local checkpoints:
 
