@@ -2,6 +2,7 @@
 
 - [Demo page](https://devsupplementary.github.io/2026ADTsupplementaryMaterial/)
 - [Curated seed sample](https://drive.google.com/file/d/1mRiFN8aKFEkKtPxThJrTTjrWm0ZY8-OG/view?usp=sharing)
+- [Hugging Face Model Card](https://huggingface.co/Pierfrancesco/adt-str)
 
 Version: `v1.0.0`
 
@@ -29,37 +30,6 @@ Available local checkpoints:
 Each checkpoint directory contains the model weights and the JSON configuration
 needed for inference. The default audio configuration uses 24 kHz audio and
 2.56-second chunks.
-
-## Results
-
-The figure below reports F1 scores on ENST and MDB across the full drum
-instrument vocabulary.
-
-![F1 scores across the full drum vocabulary](assets/f1_scores_bars_full_vocab.png)
-
-Evaluations were computed with the
-[mir_eval](https://mir-eval.readthedocs.io/latest/) package using a 50 ms
-tolerance window.
-
-The tau checkpoints correspond to different training settings:
-
-- `setting-tau-0.4`
-- `setting-tau-0.6`
-- `setting-tau-0.8`
-
-In the reported aggregate scores, `setting-tau-0.8` gives the strongest overall
-performance on both ENST and MDB.
-
-### Confusion matrices
-
-The confusion matrices below report class-level transcription behavior for each
-tau checkpoint on ENST and MDB.
-
-| Checkpoint | ENST | MDB |
-| --- | --- | --- |
-| `setting-tau-0.4` | ![ENST confusion matrix for tau 0.4](assets/confusion_matrix_ENST_tau_0.4.png) | ![MDB confusion matrix for tau 0.4](assets/confusion_matrix_MDB_tau_0.4.png) |
-| `setting-tau-0.6` | ![ENST confusion matrix for tau 0.6](assets/confusion_matrix_ENST_tau_0.6.png) | ![MDB confusion matrix for tau 0.6](assets/confusion_matrix_MDB_tau_0.6.png) |
-| `setting-tau-0.8` | ![ENST confusion matrix for tau 0.8](assets/confusion_matrix_ENST_tau_0.8.png) | ![MDB confusion matrix for tau 0.8](assets/confusion_matrix_MDB_tau_0.8.png) |
 
 ## Install
 
@@ -217,6 +187,48 @@ The checkpoint can then be used directly with:
 ```bash
 python inference --checkpoint <checkpoint-name> --input path/to/audio.wav
 ```
+
+## MIDI Key to GM-Percussion Mapping
+
+We consolidate the original 47 percussion notes into 26 distinct
+instrument classes by merging acoustically equivalent instruments, such as
+those that differ only by slight intonation variations (e.g. Crash Cymbal
+and Crash Cymbal 2, Mute Cuica and Open Cuica). This mapping simplifies the classification
+task while retaining the essential percussive elements required for detailed
+transcription.
+
+![MIDI Key to GM-Percussion Mapping](assets/MidiMapping.png)
+
+## Results
+
+The figure below reports F1 scores on ENST and MDB across the full drum
+instrument vocabulary.
+
+![F1 scores across the full drum vocabulary](assets/f1_scores_bars_full_vocab.png)
+
+Evaluations were computed with the
+[mir_eval](https://mir-eval.readthedocs.io/latest/) package using a 50 ms
+tolerance window.
+
+The tau checkpoints correspond to different training settings:
+
+- `setting-tau-0.4`
+- `setting-tau-0.6`
+- `setting-tau-0.8`
+
+In the reported aggregate scores, `setting-tau-0.8` gives the strongest overall
+performance on both ENST and MDB.
+
+### Confusion matrices
+
+The confusion matrices below report class-level transcription behavior for each
+tau checkpoint on ENST and MDB.
+
+| Checkpoint | ENST | MDB |
+| --- | --- | --- |
+| `setting-tau-0.4` | ![ENST confusion matrix for tau 0.4](assets/confusion_matrix_ENST_tau_0.4.png) | ![MDB confusion matrix for tau 0.4](assets/confusion_matrix_MDB_tau_0.4.png) |
+| `setting-tau-0.6` | ![ENST confusion matrix for tau 0.6](assets/confusion_matrix_ENST_tau_0.6.png) | ![MDB confusion matrix for tau 0.6](assets/confusion_matrix_MDB_tau_0.6.png) |
+| `setting-tau-0.8` | ![ENST confusion matrix for tau 0.8](assets/confusion_matrix_ENST_tau_0.8.png) | ![MDB confusion matrix for tau 0.8](assets/confusion_matrix_MDB_tau_0.8.png) |
 
 ## Versioning
 
